@@ -6,7 +6,7 @@ import {
   doorToKeyId,
   isDoorTile,
   isKeyTile,
-} from "../dat/tiles";
+} from "../tile-engine/tiles.js";
 
 const NON_FLOOR = new Set(["empty", ...BLOCKING_TILE_IDS]);
 

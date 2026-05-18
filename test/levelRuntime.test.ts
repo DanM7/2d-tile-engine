@@ -7,8 +7,8 @@ import {
   isDoorTile,
   removeCollectibleAt,
   removeTileAt,
-} from "../src/engine/levelRuntime.js";
-import type { LevelData } from "../src/engine/types.js";
+} from "../engine/levelRuntime.js";
+import type { LevelData } from "../engine/types.js";
 
 function cellLevel(upper: string[], lower: string[]): LevelData {
   return {

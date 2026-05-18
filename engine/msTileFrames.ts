@@ -1,5 +1,5 @@
-import { TILE_NAMES } from "../dat/tiles";
-import { msFrameIndexFromObjectCode } from "../dat/msTileIndex";
+import { TILE_NAMES } from "../tile-engine/tiles.js";
+import { msFrameIndexFromObjectCode } from "../tile-engine/msTileIndex.js";
 
 /** Maps DAT tile string ids to MS spritesheet frame indices (from CHIPS.EXE). */
 export function buildMsFrameIndexByTileId(): Map<string, number> {

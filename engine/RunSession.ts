@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { RunState } from "./types.js";
-import { KEY_TILE_IDS } from "../dat/tiles.js";
+import { KEY_TILE_IDS } from "../tile-engine/tiles.js";
 
 export type KeyTileId = "key_blue" | "key_red" | "key_green" | "key_yellow";
 

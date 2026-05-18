@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { RunSession } from "../src/engine/RunSession";
+import { RunSession } from "../engine/RunSession.js";
 
 describe("RunSession", () => {
   it("emits initial state and counts down play clock", () => {

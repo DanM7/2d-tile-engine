@@ -20,12 +20,12 @@ npm run build
 
 ## Related repos
 
-- **[cc1-asset-extraction-pipeline](https://github.com/danmaguire/cc1-asset-extraction-pipeline)** — DAT/EXE → level JSON
-- **[chips-challenge-web](https://github.com/danmaguire/chips-challenge-web)** — Phaser client (`file:../2d-tile-engine`)
+- **[cc1-asset-extraction-pipeline](https://github.com/danm7/cc1-asset-extraction-pipeline)** — DAT/EXE → level JSON
+- **[chips-challenge-web](https://github.com/danm7/chips-challenge-web)** — Phaser client (`file:../2d-tile-engine`)
 
 ## Remote
 
 ```bash
 git remote -v
-# origin → https://github.com/danmaguire/2d-tile-engine
+# origin → https://github.com/danm7/2d-tile-engine
 ```

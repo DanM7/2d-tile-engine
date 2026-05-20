@@ -1,3 +1,4 @@
+import { normalizeLevelLayers } from "./levelLayers.js";
 import type {
   AssetManifest,
   GameManifest,
@@ -28,7 +29,9 @@ export async function loadLevelsIndex(url: string): Promise<LevelsIndex> {
 }
 
 export async function loadLevel(url: string): Promise<LevelData> {
-  return fetchJson<LevelData>(url);
+  const level = await fetchJson<LevelData>(url);
+  normalizeLevelLayers(level);
+  return level;
 }
 
 export async function loadTilesetCatalog(url: string): Promise<TilesetCatalog> {

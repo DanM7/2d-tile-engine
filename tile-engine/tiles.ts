@@ -130,6 +130,19 @@ export const CHIP_TILE_IDS = new Set([
 
 /** Pickup collectibles (MS chip tile), not the player avatar sprites. */
 export const COLLECTIBLE_CHIP_TILE_ID = "chip";
+export const SOCKET_TILE_ID = "socket";
+export const BLOCK_MOVABLE_TILE_ID = "block_movable";
+export const FLIPPERS_TILE_ID = "flippers";
+export const FIRE_BOOTS_TILE_ID = "fire_boots";
+export const CHIP_DROWNING_TILE_ID = "chip_drowning";
+export const CHIP_BURNED_TILE_ID = "chip_burned";
+
+export const TOOL_TILE_IDS = new Set([
+  "flippers",
+  "fire_boots",
+  "ice_skates",
+  "suction_boots",
+]);
 
 export const KEY_TILE_IDS = new Set([
   "key_blue",
@@ -164,10 +177,57 @@ export function isDoorTile(tileId: string): boolean {
   return DOOR_TILE_IDS.has(tileId);
 }
 
+export function isSocketTile(tileId: string): boolean {
+  return tileId === SOCKET_TILE_ID;
+}
+
+export function isBlockTile(tileId: string): boolean {
+  return tileId === BLOCK_MOVABLE_TILE_ID;
+}
+
+/** MS monsters are acting walls to blocks (simplified name check). */
+export function isMonsterTile(tileId: string): boolean {
+  return /^(bug|ball|fireball|tank|ghost|frog|walker|blob|teeth)_/.test(tileId);
+}
+
+/** MS rules: green keys open any number of green doors and are not spent. */
+export function isKeyConsumedWhenOpeningDoor(keyId: string): boolean {
+  return keyId !== "key_green";
+}
+
+export const BUTTON_TILE_IDS = new Set([
+  "button_green",
+  "button_red",
+  "button_brown",
+  "button_blue",
+]);
+
+export function isButtonTile(tileId: string): boolean {
+  return BUTTON_TILE_IDS.has(tileId);
+}
+
+export function isToggleWallTile(tileId: string): boolean {
+  return tileId === "block_toggle_closed" || tileId === "block_toggle_open";
+}
+
+/** MS $2C invisible wall (will appear); shares pop-up timing with pass-once in many levels. */
+export const WALL_APPEARING_TILE_ID = "wall_appearing";
+
+/**
+ * MS $2E "Pass Once" (recessed / pop-up wall). Exported levels use the misnomer `hint_tile`.
+ * @see https://metacpan.org/pod/Data::ChipsChallenge (object hex table)
+ */
+export const PASS_ONCE_TILE_ID = "hint_tile";
+
+/** Tiles Chip may step on once, then they become a permanent upper `wall`. */
+export const MS_POPUP_WALL_TILE_IDS = new Set([
+  WALL_APPEARING_TILE_ID,
+  PASS_ONCE_TILE_ID,
+]);
+
 export const BLOCKING_TILE_IDS = new Set([
   "wall",
   "invisible_wall",
-  "wall_appearing",
   "blocked_n",
   "blocked_w",
   "blocked_s",
@@ -176,11 +236,19 @@ export const BLOCKING_TILE_IDS = new Set([
   "block_blue_wall",
   "block_toggle_closed",
   "cloner",
-  "socket",
+  "trap",
 ]);
 
 export function tileIdFromByte(byte: number): string {
   return TILE_NAMES[byte] ?? `unknown_${byte.toString(16).padStart(2, "0")}`;
+}
+
+/** MS object code ($00–$6F) for a tile id, or null if unknown. */
+export function objectCodeFromTileId(tileId: string): number | null {
+  for (const [code, name] of Object.entries(TILE_NAMES)) {
+    if (name === tileId) return Number(code);
+  }
+  return null;
 }
 
 export function tileIdsFromBytes(bytes: number[]): string[] {

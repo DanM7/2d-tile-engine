@@ -18,3 +18,15 @@ export function countCollectiblesOnMap(
   }
   return count;
 }
+
+/** MS CHIPS LEFT at level start: DAT chips-required, not visible chip count. */
+export function chipsLeftAtLevelStart(level: LevelData): number {
+  if (level.chipsRequired != null) {
+    return level.chipsRequired;
+  }
+  const fromHud = level.hud?.chipCounter?.initial;
+  if (fromHud != null) {
+    return fromHud;
+  }
+  return countCollectiblesOnMap(level);
+}

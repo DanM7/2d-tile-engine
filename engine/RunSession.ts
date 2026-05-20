@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { RunState } from "./types.js";
-import { KEY_TILE_IDS } from "../tile-engine/tiles.js";
+import { KEY_TILE_IDS, TOOL_TILE_IDS } from "../tile-engine/tiles.js";
 
 export type KeyTileId = "key_blue" | "key_red" | "key_green" | "key_yellow";
 
@@ -21,7 +21,9 @@ export class RunSession {
   private playClockSeconds: number | null;
   private collectiblesLeftCount: number;
   private readonly keysHeld: KeyTileId[] = [];
+  private readonly toolsHeld: string[] = [];
   private clockTimer: Phaser.Time.TimerEvent | null = null;
+  private playClockStarted = false;
 
   constructor(config: RunSessionConfig, emit: (state: RunState) => void) {
     this.config = config;
@@ -35,7 +37,7 @@ export class RunSession {
       levelNumber: this.config.levelNumber,
       playClockSeconds: this.playClockSeconds,
       collectiblesLeftCount: this.collectiblesLeftCount,
-      inventory: { keys: [...this.keysHeld] },
+      inventory: { keys: [...this.keysHeld], tools: [...this.toolsHeld] },
     };
   }
 
@@ -69,10 +71,19 @@ export class RunSession {
     return true;
   }
 
-  /** Bind countdown tick to the scene clock; call once after level load. */
+  /** Emit initial HUD state after level load; clock waits for {@link startPlayClock}. */
   start(scene: Phaser.Scene): void {
     this.stop();
+    void scene;
     this.emitState();
+  }
+
+  /** MS: TIME counter begins on the player's first move. */
+  startPlayClock(scene: Phaser.Scene): void {
+    if (this.playClockStarted) {
+      return;
+    }
+    this.playClockStarted = true;
 
     if (this.playClockSeconds == null || this.playClockSeconds <= 0) {
       return;
@@ -95,6 +106,28 @@ export class RunSession {
     });
   }
 
+  /** Sync inventory and chip counter after an MS CC1 rules step. */
+  applyMsCc1State(state: {
+    keys: string[];
+    tools: string[];
+    chipsRemainingOnMap: number;
+  }): void {
+    this.keysHeld.length = 0;
+    for (const key of state.keys) {
+      if (KEY_TILE_IDS.has(key)) {
+        this.keysHeld.push(key as KeyTileId);
+      }
+    }
+    this.toolsHeld.length = 0;
+    for (const tool of state.tools) {
+      if (TOOL_TILE_IDS.has(tool)) {
+        this.toolsHeld.push(tool);
+      }
+    }
+    this.collectiblesLeftCount = state.chipsRemainingOnMap;
+    this.emitState();
+  }
+
   /** Player picked up one collectible still on the map. */
   collectOne(): boolean {
     if (this.collectiblesLeftCount <= 0) {
@@ -106,6 +139,7 @@ export class RunSession {
   }
 
   stop(): void {
+    this.playClockStarted = false;
     this.stopClock();
   }
 

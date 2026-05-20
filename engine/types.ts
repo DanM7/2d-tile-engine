@@ -28,6 +28,8 @@ export interface GameManifest {
   windowLayoutUrl?: string;
   /** @deprecated Use windowLayoutUrl */
   hudLayoutUrl?: string;
+  /** CC1 level number to load when PlayScene starts (set by web bootstrap). */
+  launchLevelNumber?: number;
 }
 
 /** MS Windows vs Lynx original-game reference (`data/original-level-reference.json`). */
@@ -85,6 +87,20 @@ export interface LevelMonster {
   direction: "north" | "east" | "south" | "west";
 }
 
+/** On-disk layer: leading empties omitted (see `emptyPrefix`). */
+export interface LevelLayerCompact {
+  /** Row-major index of the first stored tile; cells before this are `empty`. */
+  emptyPrefix: number;
+  tiles: string[];
+}
+
+/** Level JSON may use compact layers; loaders expand to full arrays. */
+export interface LevelLayersSerialized {
+  lower: string[] | LevelLayerCompact;
+  upper: string[] | LevelLayerCompact;
+}
+
+/** Runtime layers after {@link normalizeLevelLayers} (always full `width` × `height`). */
 export interface LevelLayers {
   lower: string[];
   upper: string[];
@@ -100,14 +116,12 @@ export interface LevelHud {
     initialSeconds: number;
   };
   chipCounter?: {
-    /** MS-style: chips still needed to open the socket. */
+    /** MS-style: chips still needed to open the socket (DAT chips-required). */
     mode: "remaining";
     initial: number;
-    required: number;
   };
-  /** Chips on map at level start (from level geometry). */
+  /** Pickup chips visible at level start (composite map scan; may be less than `initial` when chips are hidden). */
   collectiblesOnMap?: number;
-  inventorySlots?: string[];
 }
 
 /** Ruleset HUD chrome (e.g. MS inventory slot order). */
@@ -136,7 +150,7 @@ export interface RunState {
   /** Collectibles still on the map (MS: chips left). */
   collectiblesLeftCount: number;
   /** Keys held, left → right in the HUD top row (e.g. `key_blue`). */
-  inventory?: { keys: string[] };
+  inventory?: { keys: string[]; tools?: string[] };
 }
 
 /** @deprecated Use RunState */
@@ -150,13 +164,20 @@ export type RunStateHud = RunState & {
 export interface LevelData {
   id: string;
   name: string;
+  /** Rules engine id (e.g. grid-arcade-v1). */
+  ruleset?: string;
+  /** Content pack id (e.g. ms-cc1). */
+  contentPack?: string;
   width: number;
   height: number;
   tileSize: number;
-  layers: LevelLayers;
+  /** Compact on disk; expanded to full arrays by {@link normalizeLevelLayers}. */
+  layers: LevelLayersSerialized;
   timeLimit?: number;
   chipsRequired?: number;
   monsters?: LevelMonster[];
+  trapLinks?: { button: { x: number; y: number }; trap: { x: number; y: number } }[];
+  cloneLinks?: { button: { x: number; y: number }; clone: { x: number; y: number } }[];
   metadata?: {
     title?: string;
     hint?: string;

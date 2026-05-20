@@ -27,6 +27,10 @@ describe("RunSession", () => {
     expect(states[0]).toEqual({ playClockSeconds: 3, collectiblesLeftCount: 5 });
 
     vi.advanceTimersByTime(1000);
+    expect(states.at(-1)?.playClockSeconds).toBe(3);
+
+    session.startPlayClock(scene);
+    vi.advanceTimersByTime(1000);
     expect(states.at(-1)?.playClockSeconds).toBe(2);
 
     session.collectOne();

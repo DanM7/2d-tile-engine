@@ -45,6 +45,15 @@ export class DirectionInput {
   private dpadPointerDown: ((event: PointerEvent) => void) | null = null;
   private dpadPointerUp: ((event: PointerEvent) => void) | null = null;
   private dpadHoldDirection: Direction | null = null;
+  private swipeTarget: HTMLElement | null = null;
+  private swipePointerId: number | null = null;
+  private swipeStartX = 0;
+  private swipeStartY = 0;
+  private swipePointerDown: ((event: PointerEvent) => void) | null = null;
+  private swipePointerUp: ((event: PointerEvent) => void) | null = null;
+
+  /** Minimum swipe distance (px) to count as a grid step. */
+  private static readonly SWIPE_THRESHOLD_PX = 28;
 
   constructor(bus: GameEventBus) {
     this.bus = bus;
@@ -97,6 +106,59 @@ export class DirectionInput {
     }
   }
 
+  /**
+   * One-step swipe on the playfield (phones / tablets).
+   * Does not repeat while held — use D-pad hold for continuous movement.
+   */
+  bindSwipe(target: HTMLElement): void {
+    this.unbindSwipe(target);
+
+    this.swipeTarget = target;
+    this.swipePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      this.swipePointerId = event.pointerId;
+      this.swipeStartX = event.clientX;
+      this.swipeStartY = event.clientY;
+    };
+
+    this.swipePointerUp = (event: PointerEvent) => {
+      if (this.swipePointerId !== event.pointerId) return;
+      this.swipePointerId = null;
+      const dx = event.clientX - this.swipeStartX;
+      const dy = event.clientY - this.swipeStartY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      if (Math.max(absX, absY) < DirectionInput.SWIPE_THRESHOLD_PX) {
+        return;
+      }
+      if (absX >= absY) {
+        this.bus.emitDirection(dx > 0 ? "right" : "left");
+      } else {
+        this.bus.emitDirection(dy > 0 ? "down" : "up");
+      }
+    };
+
+    target.addEventListener("pointerdown", this.swipePointerDown);
+    target.addEventListener("pointerup", this.swipePointerUp);
+    target.addEventListener("pointercancel", this.swipePointerUp);
+  }
+
+  unbindSwipe(target: HTMLElement): void {
+    if (this.swipePointerDown) {
+      target.removeEventListener("pointerdown", this.swipePointerDown);
+      this.swipePointerDown = null;
+    }
+    if (this.swipePointerUp) {
+      target.removeEventListener("pointerup", this.swipePointerUp);
+      target.removeEventListener("pointercancel", this.swipePointerUp);
+      this.swipePointerUp = null;
+    }
+    if (this.swipeTarget === target) {
+      this.swipeTarget = null;
+      this.swipePointerId = null;
+    }
+  }
+
   /** Desktop / hardware keyboard: Arrow keys and WASD. */
   bindKeyboard(): void {
     if (this.keyDownListener) return;
@@ -140,6 +202,9 @@ export class DirectionInput {
 
   dispose(): void {
     this.releaseAllKeys();
+    if (this.swipeTarget) {
+      this.unbindSwipe(this.swipeTarget);
+    }
     if (this.keyDownListener) {
       window.removeEventListener("keydown", this.keyDownListener);
       this.keyDownListener = null;

@@ -171,8 +171,11 @@ export interface LevelData {
   width: number;
   height: number;
   tileSize: number;
-  /** Compact on disk; expanded to full arrays by {@link normalizeLevelLayers}. */
-  layers: LevelLayersSerialized;
+  /**
+   * On disk: compact `{ emptyPrefix, tiles }`; after {@link normalizeLevelLayers} always full arrays.
+   * Typed as {@link LevelLayers} for runtime simulation (loaders expand before play).
+   */
+  layers: LevelLayers;
   timeLimit?: number;
   chipsRequired?: number;
   monsters?: LevelMonster[];

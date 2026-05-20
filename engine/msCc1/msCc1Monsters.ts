@@ -107,9 +107,9 @@ function recordPlacement(
 /** Build runtime monster list from DAT field 10 order (reading order). */
 export function createMsCc1Monsters(level: LevelData): MsCc1MonsterState[] {
   const entries =
-    level.monsters && level.monsters.length > 0
+    (level.monsters && level.monsters.length > 0
       ? level.monsters
-      : scanMonsterCellsOnMap(level);
+      : scanMonsterCellsOnMap(level)) ?? [];
   const monsters: MsCc1MonsterState[] = [];
 
   for (const entry of entries) {

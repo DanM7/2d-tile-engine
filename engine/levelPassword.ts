@@ -4,7 +4,7 @@ import type { LevelsIndex, OriginalLevelReferenceDoc } from "./types.js";
 export const REGISTRY_PENDING_LEVEL_NUMBER = "pendingLevelNumber";
 
 /** Fallback when `levels/index.json` has no valid `defaultLevelId`. */
-export const DEFAULT_LAUNCH_LEVEL_ID = "level-008";
+export const DEFAULT_LAUNCH_LEVEL_ID = "level-001";
 
 /** Parsed from `DEFAULT_LAUNCH_LEVEL_ID`; last-resort numeric fallback. */
 export const DEFAULT_LAUNCH_LEVEL_NUMBER = 8;

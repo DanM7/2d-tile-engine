@@ -7,7 +7,6 @@ import { monsterTileId } from "./monsterDirection.js";
 import { applyRedButtonClone } from "./msCc1Clone.js";
 import { openTrapForBrownButton, openTrapFromTrapStep } from "./msCc1Traps.js";
 import { isButtonTile, isToggleWallTile } from "../../tile-engine/tiles.js";
-import { cellTile } from "../levelRuntime.js";
 
 /** Button under a creature (lower layer) or on the surface (upper only). */
 function buttonTileAt(level: LevelData, x: number, y: number): string | null {

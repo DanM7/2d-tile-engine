@@ -101,4 +101,37 @@ describe("DirectionInput", () => {
 
     input.dispose();
   });
+
+  it("emits one step from a horizontal swipe on the playfield", () => {
+    const bus = new GameEventBus();
+    const input = new DirectionInput(bus);
+    const steps: string[] = [];
+    bus.onDirection((d) => steps.push(d));
+
+    const listeners = new Map<string, Set<(e: PointerEvent) => void>>();
+    const el = {
+      addEventListener(type: string, fn: (e: PointerEvent) => void) {
+        let set = listeners.get(type);
+        if (!set) {
+          set = new Set();
+          listeners.set(type, set);
+        }
+        set.add(fn);
+      },
+      removeEventListener(type: string, fn: (e: PointerEvent) => void) {
+        listeners.get(type)?.delete(fn);
+      },
+    } as unknown as HTMLElement;
+
+    input.bindSwipe(el);
+    listeners.get("pointerdown")?.forEach((fn) =>
+      fn({ pointerId: 1, clientX: 100, clientY: 100, button: 0 } as PointerEvent),
+    );
+    listeners.get("pointerup")?.forEach((fn) =>
+      fn({ pointerId: 1, clientX: 140, clientY: 105, button: 0 } as PointerEvent),
+    );
+    expect(steps).toEqual(["right"]);
+
+    input.dispose();
+  });
 });

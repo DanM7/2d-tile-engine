@@ -11,7 +11,8 @@ Grid arcade engine for MS-style tile games: level runtime, run state, input, and
 | `engine/levelLayers.ts` | Compact layer JSON (`emptyPrefix` + `tiles`); expanded in `loadLevel()` |
 
 **Schema owner:** `LevelData`, tile ids, and collectible helpers are defined here. **cc1-asset-extraction-pipeline** depends on this package and writes JSON into **chips-challenge-web** — it does not store game levels in the pipeline repo.
-| `runtime/` | Reserved for shared bootstrap helpers (game shells live in web repo) |
+
+Phaser scenes and DOM shell live in **chips-challenge-web**, not in this repo.
 
 ## Setup
 

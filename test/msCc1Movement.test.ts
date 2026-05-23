@@ -129,6 +129,45 @@ describe("tryMsCc1Move", () => {
     expect(r.position).toEqual({ x: 1, y: 1 });
   });
 
+  it("combines south force floor with held right into diagonal steps (force on lower)", () => {
+    const level = levelFromGrid(
+      { "0,1": "chip_s" },
+      6,
+      6,
+      {
+        "0,1": "force_s",
+        "1,2": "force_s",
+        "2,3": "force_s",
+      },
+    );
+    const state = msCc1StateFromRun([], 0);
+    const r = tryMsCc1Move(level, { x: 0, y: 1 }, "right", state);
+    expect(r.position).toEqual({ x: 3, y: 4 });
+  });
+
+  it("combines upstream force_s with held right when entering from above", () => {
+    const level = levelFromGrid({
+      "0,0": "chip_s",
+      "0,1": "force_s",
+      "1,2": "force_s",
+    });
+    const state = msCc1StateFromRun([], 0);
+    const r = tryMsCc1Move(level, { x: 0, y: 0 }, "right", state);
+    expect(r.position).toEqual({ x: 1, y: 1 });
+  });
+
+  it("combines south force on upper layer with held right (level 9 style)", () => {
+    const level = levelFromGrid({
+      "0,0": "force_s",
+      "1,1": "force_s",
+      "2,2": "force_s",
+      "3,3": "empty",
+    });
+    const state = msCc1StateFromRun([], 0);
+    const r = tryMsCc1Move(level, { x: 0, y: 0 }, "right", state);
+    expect(r.position).toEqual({ x: 3, y: 3 });
+  });
+
   it("completes level on exit when chips remaining is zero", () => {
     const level = levelFromGrid({
       "0,0": "chip_s",
@@ -333,7 +372,7 @@ describe("tryMsCc1Move", () => {
     });
   });
 
-  it("raises a permanent wall when Chip steps on wall_appearing", () => {
+  it("removes wall_appearing permanently when Chip steps on it", () => {
     const level = levelFromGrid({
       "0,1": "chip_s",
       "1,1": "wall_appearing",
@@ -341,25 +380,44 @@ describe("tryMsCc1Move", () => {
     const r = tryMsCc1Move(level, { x: 0, y: 1 }, "right", msCc1StateFromRun([], 0));
     expect(r.moved).toBe(true);
     expect(r.position).toEqual({ x: 1, y: 1 });
-    expect(getCompositeTile(level, 1, 1)).toBe("wall");
+    expect(getCompositeTile(level, 1, 1)).toBe("empty");
     expect(r.cellChanges).toContainEqual({
       x: 1,
       y: 1,
       removedTileId: "wall_appearing",
-      placedTileId: "wall",
     });
 
     const stepOff = tryMsCc1Move(level, { x: 1, y: 1 }, "left", msCc1StateFromRun([], 0));
     expect(stepOff.moved).toBe(true);
-    expect(getCompositeTile(level, 1, 1)).toBe("wall");
+    expect(getCompositeTile(level, 1, 1)).toBe("empty");
 
-    const blockedBack = tryMsCc1Move(
+    const passAgain = tryMsCc1Move(
       level,
       { x: 0, y: 1 },
       "right",
       msCc1StateFromRun([], 0),
     );
-    expect(blockedBack.moved).toBe(false);
+    expect(passAgain.moved).toBe(true);
+    expect(getCompositeTile(level, 1, 1)).toBe("empty");
+  });
+
+  it("removes fake blue wall (block_blue_tile) permanently when Chip steps on it", () => {
+    const level = levelFromGrid({
+      "0,1": "chip_s",
+      "1,1": "block_blue_tile",
+    });
+    const r = tryMsCc1Move(level, { x: 0, y: 1 }, "right", msCc1StateFromRun([], 0));
+    expect(r.moved).toBe(true);
+    expect(getCompositeTile(level, 1, 1)).toBe("empty");
+    expect(r.cellChanges).toContainEqual({
+      x: 1,
+      y: 1,
+      removedTileId: "block_blue_tile",
+    });
+
+    tryMsCc1Move(level, { x: 1, y: 1 }, "left", msCc1StateFromRun([], 0));
+    tryMsCc1Move(level, { x: 0, y: 1 }, "right", msCc1StateFromRun([], 0));
+    expect(getCompositeTile(level, 1, 1)).toBe("empty");
   });
 
   it("thief removes all boots but keeps keys", () => {

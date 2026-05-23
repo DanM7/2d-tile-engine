@@ -219,11 +219,17 @@ export const WALL_APPEARING_TILE_ID = "wall_appearing";
  */
 export const PASS_ONCE_TILE_ID = "hint_tile";
 
-/** Tiles Chip may step on once, then they become a permanent upper `wall`. */
+/** Tiles Chip may step on once (movement uses `allowAppearingWall`). */
 export const MS_POPUP_WALL_TILE_IDS = new Set([
   WALL_APPEARING_TILE_ID,
   PASS_ONCE_TILE_ID,
 ]);
+
+/**
+ * MS fake blue wall ($1E in many exports). Acts as dirt: removed permanently when Chip steps on it.
+ * Real blue walls use `block_blue_wall` ($1F) and stay blocking.
+ */
+export const FAKE_BLUE_WALL_TILE_ID = "block_blue_tile";
 
 export const BLOCKING_TILE_IDS = new Set([
   "wall",

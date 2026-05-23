@@ -1,6 +1,10 @@
 import type { Direction } from "../types.js";
 import { CHIP_TILE_IDS } from "../../tile-engine/tiles.js";
-import { getCompositeTile, getFloorTileId } from "../levelRuntime.js";
+import { cellTile, getCompositeTile, getFloorTileId } from "../levelRuntime.js";
+import {
+  moveIntentFromDirection,
+  type MoveIntent,
+} from "../moveIntent.js";
 import type { LevelData } from "../types.js";
 import type { MsCc1PlayerState } from "./types.js";
 
@@ -80,6 +84,77 @@ export function getTerrainTileUnderChip(
     return composite;
   }
   return null;
+}
+
+/**
+ * Force-floor tile at a cell (MS often stores these on upper or lower layer).
+ * `getFloorTileId` alone misses force on upper when that layer is non-empty.
+ */
+export function getForceFloorTileAt(
+  level: LevelData,
+  x: number,
+  y: number,
+): string | null {
+  const upper = cellTile(level, "upper", x, y);
+  if (isForceFloorTile(upper)) {
+    return upper;
+  }
+  const lower = cellTile(level, "lower", x, y);
+  if (isForceFloorTile(lower)) {
+    return lower;
+  }
+  return null;
+}
+
+/**
+ * Force on an orthogonally adjacent cell that pushes Chip at (x, y) onto that tile.
+ * E.g. force_s at (x, y+1) pushes Chip at (x, y) south.
+ */
+export function getAdjacentForcePushOntoChip(
+  level: LevelData,
+  x: number,
+  y: number,
+  state: MsCc1PlayerState,
+): MoveIntent | null {
+  if (hasSuctionBoots(state)) {
+    return null;
+  }
+  const checks: Array<{ nx: number; ny: number; push: MoveIntent }> = [
+    { nx: x, ny: y + 1, push: { dx: 0, dy: 1 } },
+    { nx: x, ny: y - 1, push: { dx: 0, dy: -1 } },
+    { nx: x + 1, ny: y, push: { dx: 1, dy: 0 } },
+    { nx: x - 1, ny: y, push: { dx: -1, dy: 0 } },
+  ];
+  for (const { nx, ny, push } of checks) {
+    const tile = getForceFloorTileAt(level, nx, ny);
+    if (!tile) {
+      continue;
+    }
+    const dir = forceFloorDirection(tile);
+    if (!dir) {
+      continue;
+    }
+    const forcePush = moveIntentFromDirection(dir);
+    if (forcePush.dx === push.dx && forcePush.dy === push.dy) {
+      return forcePush;
+    }
+  }
+  return null;
+}
+
+/** Active force-floor push at a cell (null with suction boots or no force tile). */
+export function getForceFloorIntentAt(
+  level: LevelData,
+  x: number,
+  y: number,
+  state: MsCc1PlayerState,
+): MoveIntent | null {
+  if (hasSuctionBoots(state)) {
+    return null;
+  }
+  const tile = getForceFloorTileAt(level, x, y);
+  const direction = tile ? forceFloorDirection(tile) : null;
+  return direction ? moveIntentFromDirection(direction) : null;
 }
 
 export function forceFloorDirection(tileId: string): Direction | null {

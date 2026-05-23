@@ -1,9 +1,17 @@
 import type { Direction, LevelData } from "../types.js";
 import {
+  combineMoveIntents,
+  directionFromMoveIntent,
+  isPerpendicularMoveIntent,
+  moveIntentFromDirection,
+  type MoveIntent,
+} from "../moveIntent.js";
+import {
   cellTile,
   doorToKeyId,
   dryDirtCell,
   getCompositeTile,
+  getFloorTileId,
   isBlockedCell,
   isDirtCell,
   isDoorTile,
@@ -27,10 +35,18 @@ import {
   isMonsterTile,
   SOCKET_TILE_ID,
   TOOL_TILE_IDS,
+  FAKE_BLUE_WALL_TILE_ID,
   MS_POPUP_WALL_TILE_IDS,
+  PASS_ONCE_TILE_ID,
+  WALL_APPEARING_TILE_ID,
 } from "../../tile-engine/tiles.js";
 import { MS_DEATH_CREATURES } from "./msCc1Monsters.js";
-import { slideDirectionAfterLanding } from "./msCc1Sliding.js";
+import {
+  getAdjacentForcePushOntoChip,
+  getForceFloorIntentAt,
+  getForceFloorTileAt,
+  slideDirectionAfterLanding,
+} from "./msCc1Sliding.js";
 import {
   isFunctioningTeleportAt,
   isNonFunctioningTeleportAt,
@@ -61,17 +77,42 @@ export function isExitTile(tileId: string): boolean {
   return EXIT_TILE_IDS.has(tileId);
 }
 
-function directionDelta(direction: Direction): { dx: number; dy: number } {
-  switch (direction) {
-    case "up":
-      return { dx: 0, dy: -1 };
-    case "down":
-      return { dx: 0, dy: 1 };
-    case "left":
-      return { dx: -1, dy: 0 };
-    case "right":
-      return { dx: 1, dy: 0 };
+/**
+ * First-step intent on/near force floors.
+ * MS: on a force tile, or entering from upstream with perpendicular input → combine push + input.
+ */
+function stepIntentOnForceFloor(
+  level: LevelData,
+  x: number,
+  y: number,
+  inputDirection: Direction,
+  state: MsCc1PlayerState,
+): { intent: MoveIntent; direction: Direction; onForceFloor: boolean } {
+  const inputIntent = moveIntentFromDirection(inputDirection);
+  const standingForce = getForceFloorIntentAt(level, x, y, state);
+  if (standingForce) {
+    const intent = combineMoveIntents(standingForce, inputIntent);
+    return {
+      intent,
+      direction: directionFromMoveIntent(intent),
+      onForceFloor: true,
+    };
   }
+
+  const upstreamForce = getAdjacentForcePushOntoChip(level, x, y, state);
+  if (
+    upstreamForce &&
+    isPerpendicularMoveIntent(upstreamForce, inputIntent)
+  ) {
+    const intent = combineMoveIntents(upstreamForce, inputIntent);
+    return {
+      intent,
+      direction: directionFromMoveIntent(intent),
+      onForceFloor: true,
+    };
+  }
+
+  return { intent: inputIntent, direction: inputDirection, onForceFloor: false };
 }
 
 function hasKey(state: MsCc1PlayerState, keyId: string): boolean {
@@ -142,8 +183,23 @@ function dryDirtUnderChip(
   }
 }
 
-/** MS pass-once / pop-up wall ($2E) and invisible wall appearing ($2C): become permanent `wall`. */
-function applyAppearingWall(
+/** MS fake blue wall ($1E): permanent floor when Chip steps on it (acting dirt). */
+function applyFakeBlueWall(
+  level: LevelData,
+  x: number,
+  y: number,
+  cellChanges: MsCc1CellChange[],
+): void {
+  if (!removeTileAt(level, x, y, FAKE_BLUE_WALL_TILE_ID)) {
+    return;
+  }
+  recordRemoval(cellChanges, x, y, FAKE_BLUE_WALL_TILE_ID);
+}
+
+/**
+ * MS pass-once ($2E) becomes `wall` behind Chip; wall appearing ($2C) stays open permanently.
+ */
+function applyPopupWallOnStep(
   level: LevelData,
   x: number,
   y: number,
@@ -160,13 +216,19 @@ function applyAppearingWall(
     return;
   }
   removeTileAt(level, x, y, tileId);
-  setUpperTile(level, x, y, "wall");
-  cellChanges.push({
-    x,
-    y,
-    removedTileId: tileId,
-    placedTileId: "wall",
-  });
+  if (tileId === PASS_ONCE_TILE_ID) {
+    setUpperTile(level, x, y, "wall");
+    cellChanges.push({
+      x,
+      y,
+      removedTileId: tileId,
+      placedTileId: "wall",
+    });
+    return;
+  }
+  if (tileId === WALL_APPEARING_TILE_ID) {
+    recordRemoval(cellChanges, x, y, tileId);
+  }
 }
 
 function clearChipMarkerOnDepart(
@@ -357,7 +419,8 @@ function completeSuccessfulMove(
   clearChipMarkerOnDepart(level, from.x, from.y, cellChanges);
   pickUpAt(level, to.x, to.y, state, cellChanges);
   applyThiefSteal(level, to.x, to.y, state);
-  applyAppearingWall(level, to.x, to.y, cellChanges);
+  applyFakeBlueWall(level, to.x, to.y, cellChanges);
+  applyPopupWallOnStep(level, to.x, to.y, cellChanges);
   dryDirtUnderChip(level, to.x, to.y, cellChanges);
 
   if (isWaterCell(level, to.x, to.y) && !hasFlippers(state)) {
@@ -423,25 +486,32 @@ function recordStep(
 }
 
 /**
- * One voluntary grid step (no ice/force chain).
+ * One grid step along `dx`/`dy` (orthogonal or diagonal). No ice/force chain.
  * Mutates `level` layers and returns updated player state.
  */
-export function tryMsCc1SingleStep(
+export function tryMsCc1StepDelta(
   level: LevelData,
   position: { x: number; y: number },
-  direction: Direction,
+  dx: number,
+  dy: number,
   state: MsCc1PlayerState,
   mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  direction?: Direction,
 ): MsCc1MoveResult {
   const cellChanges: MsCc1CellChange[] = [];
   const nextState = clonePlayerState(state);
+  const stepDirection =
+    direction ?? directionFromMoveIntent({ dx: dx as -1 | 0 | 1, dy: dy as -1 | 0 | 1 });
 
-  const { dx, dy } = directionDelta(direction);
+  if (dx === 0 && dy === 0) {
+    return noMove(position, nextState, cellChanges, stepDirection);
+  }
+
   const nx = position.x + dx;
   const ny = position.y + dy;
 
   if (nx < 0 || nx >= level.width || ny < 0 || ny >= level.height) {
-    return noMove(position, nextState, cellChanges, direction);
+    return noMove(position, nextState, cellChanges, stepDirection);
   }
 
   const destTile = getCompositeTile(level, nx, ny);
@@ -455,7 +525,7 @@ export function tryMsCc1SingleStep(
       state: nextState,
       cellChanges,
       completedLevel: false,
-      direction,
+      direction: stepDirection,
       playerDied: true,
       deathMessage: MS_DEATH_CREATURES,
       steps: [],
@@ -464,7 +534,7 @@ export function tryMsCc1SingleStep(
 
   if (isBlockTile(destTile)) {
     if (!tryPushBlock(level, nx, ny, dx, dy, chipsLeft, cellChanges)) {
-      return noMove(position, nextState, cellChanges, direction);
+      return noMove(position, nextState, cellChanges, stepDirection);
     }
     return completeSuccessfulMove(
       level,
@@ -472,14 +542,14 @@ export function tryMsCc1SingleStep(
       { x: nx, y: ny },
       nextState,
       cellChanges,
-      direction,
+      stepDirection,
     );
   }
 
   if (isDoorTile(destTile)) {
     const keyId = doorToKeyId(destTile);
     if (!keyId || !hasKey(nextState, keyId)) {
-      return noMove(position, nextState, cellChanges, direction);
+      return noMove(position, nextState, cellChanges, stepDirection);
     }
     if (isKeyConsumedWhenOpeningDoor(keyId)) {
       consumeKey(nextState, keyId);
@@ -488,13 +558,13 @@ export function tryMsCc1SingleStep(
     recordRemoval(cellChanges, nx, ny, destTile);
   } else if (isSocketTile(destTile)) {
     if (chipsLeft > 0) {
-      return noMove(position, nextState, cellChanges, direction);
+      return noMove(position, nextState, cellChanges, stepDirection);
     }
     removeTileAt(level, nx, ny, SOCKET_TILE_ID);
     recordRemoval(cellChanges, nx, ny, SOCKET_TILE_ID);
   } else if (isExitTile(destTile)) {
     if (chipsLeft > 0) {
-      return noMove(position, nextState, cellChanges, direction);
+      return noMove(position, nextState, cellChanges, stepDirection);
     }
   } else if (
     isBlockedCell(level, nx, ny, {
@@ -503,11 +573,11 @@ export function tryMsCc1SingleStep(
       allowAppearingWall: true,
     })
   ) {
-    return noMove(position, nextState, cellChanges, direction);
+    return noMove(position, nextState, cellChanges, stepDirection);
   }
 
   if (CHIP_TILE_IDS.has(destTile)) {
-    return noMove(position, nextState, cellChanges, direction);
+    return noMove(position, nextState, cellChanges, stepDirection);
   }
 
   return completeSuccessfulMove(
@@ -516,8 +586,23 @@ export function tryMsCc1SingleStep(
     { x: nx, y: ny },
     nextState,
     cellChanges,
-    direction,
+    stepDirection,
   );
+}
+
+/**
+ * One voluntary grid step (no ice/force chain).
+ * Mutates `level` layers and returns updated player state.
+ */
+export function tryMsCc1SingleStep(
+  level: LevelData,
+  position: { x: number; y: number },
+  direction: Direction,
+  state: MsCc1PlayerState,
+  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+): MsCc1MoveResult {
+  const { dx, dy } = moveIntentFromDirection(direction);
+  return tryMsCc1StepDelta(level, position, dx, dy, state, mechanics, direction);
 }
 
 const MAX_SLIDE_STEPS = 64;
@@ -586,8 +671,26 @@ export function tryMsCc1Move(
   const steps: MsCc1MoveStep[] = [];
   let pos = { ...position };
   let playerState = clonePlayerState(state);
+  const inputIntent = moveIntentFromDirection(direction);
 
-  const first = tryMsCc1SingleStep(level, pos, direction, playerState, mechanics);
+  const firstOnForce = stepIntentOnForceFloor(
+    level,
+    pos.x,
+    pos.y,
+    direction,
+    playerState,
+  );
+  const first = firstOnForce.onForceFloor
+    ? tryMsCc1StepDelta(
+        level,
+        pos,
+        firstOnForce.intent.dx,
+        firstOnForce.intent.dy,
+        playerState,
+        mechanics,
+        firstOnForce.direction,
+      )
+    : tryMsCc1SingleStep(level, pos, direction, playerState, mechanics);
   recordStep(pos, first, steps);
   if (!first.moved) {
     return { ...first, steps };
@@ -655,13 +758,38 @@ export function tryMsCc1Move(
       continue;
     }
 
-    const standing = getCompositeTile(level, pos.x, pos.y);
-    const slideDir = slideDirectionAfterLanding(standing, playerState, result.direction);
+    const composite = getCompositeTile(level, pos.x, pos.y);
+    const floor = getFloorTileId(level, pos.x, pos.y);
+    const forceTile = getForceFloorTileAt(level, pos.x, pos.y);
+    const slideSurface =
+      forceTile ?? (CHIP_TILE_IDS.has(composite) ? floor : composite);
+    const slideDir = slideDirectionAfterLanding(
+      slideSurface,
+      playerState,
+      result.direction,
+    );
     if (!slideDir) {
       break;
     }
 
-    const slideStep = tryMsCc1SingleStep(level, pos, slideDir, playerState, mechanics);
+    const slideStep = forceTile
+      ? (() => {
+          const slideIntent = combineMoveIntents(
+            moveIntentFromDirection(slideDir),
+            inputIntent,
+          );
+          const slideDirection = directionFromMoveIntent(slideIntent);
+          return tryMsCc1StepDelta(
+            level,
+            pos,
+            slideIntent.dx,
+            slideIntent.dy,
+            playerState,
+            mechanics,
+            slideDirection,
+          );
+        })()
+      : tryMsCc1SingleStep(level, pos, slideDir, playerState, mechanics);
     recordStep(pos, slideStep, steps);
     result = {
       moved: result.moved || slideStep.moved,

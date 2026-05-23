@@ -271,4 +271,9 @@ export class DirectionInput {
     this.activeDirection = null;
     this.stopRepeatTimer();
   }
+
+  /** Whether a direction key or d-pad hold is currently active. */
+  hasActiveDirection(): boolean {
+    return this.activeDirection != null;
+  }
 }

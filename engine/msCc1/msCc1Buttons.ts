@@ -5,7 +5,10 @@ import type { MsCc1MonsterState } from "./msCc1Monsters.js";
 import { reverseMonsterFacing } from "./monsterDirection.js";
 import { monsterTileId } from "./monsterDirection.js";
 import { applyRedButtonClone } from "./msCc1Clone.js";
-import { openTrapForBrownButton, openTrapFromTrapStep } from "./msCc1Traps.js";
+import {
+  openTrapForBrownButton,
+  stickCreatureOnTrap,
+} from "./msCc1Traps.js";
 import { isButtonTile, isToggleWallTile } from "../../tile-engine/tiles.js";
 
 /** Button under a creature (lower layer) or on the surface (upper only). */
@@ -28,6 +31,10 @@ export interface MsCc1ButtonPressContext {
   redButtonArmed: Set<string>;
   /** Trap cells opened by brown buttons (tile remains; MS acting floor). */
   openTraps: Set<string>;
+  /** Closed traps holding a creature until opened. */
+  stuckOnTraps: Set<string>;
+  /** Brown buttons held down by a block (linked traps stay open). */
+  heldBrownButtons: Set<string>;
   /** MS move boundaries since level start (incremented each monster-list tick). */
   moveBoundary: number;
   /** Teeth / blob cadence; MSCC defaults to even step. */
@@ -153,9 +160,7 @@ export function applyButtonPressAt(
     }
   }
 
-  if (cellTile(level, "upper", to.x, to.y) === "trap") {
-    openTrapFromTrapStep(level, to.x, to.y, monsters, cellChanges, ctx);
-  }
+  stickCreatureOnTrap(level, to.x, to.y, ctx);
 }
 
 export { isToggleWallTile };

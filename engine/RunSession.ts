@@ -45,14 +45,18 @@ export class RunSession {
     return this.keysHeld.includes(keyId as KeyTileId);
   }
 
-  /** Pick up a key if that color is not already held. */
+  /** Pick up a key. MS: colored keys stack; green is infinite (one copy). */
   tryAddKey(keyId: string): boolean {
     if (!KEY_TILE_IDS.has(keyId)) {
       return false;
     }
     const id = keyId as KeyTileId;
-    if (this.keysHeld.includes(id)) {
-      return false;
+    if (id === "key_green") {
+      if (!this.keysHeld.includes(id)) {
+        this.keysHeld.push(id);
+        this.emitState();
+      }
+      return true;
     }
     this.keysHeld.push(id);
     this.emitState();

@@ -1,5 +1,6 @@
 import type { Direction, LevelData } from "../types.js";
-import { cellTile, getCompositeTile, isBlockedCell } from "../levelRuntime.js";
+import { cellTile, getCompositeTile, isBlockedCell, isDirtCell, isWetDirtCell } from "../levelRuntime.js";
+import { brownButtonTileAt } from "./msCc1Traps.js";
 import {
   CHIP_TILE_IDS,
   isBlockTile,
@@ -73,6 +74,7 @@ export function canChipStepOnto(
   y: number,
   state: MsCc1PlayerState,
   openTraps?: Set<string>,
+  stuckOnTraps?: Set<string>,
 ): boolean {
   if (x < 0 || x >= level.width || y < 0 || y >= level.height) {
     return false;
@@ -94,6 +96,7 @@ export function canChipStepOnto(
     isBlockedCell(level, x, y, {
       chipsRemainingOnMap: state.chipsRemainingOnMap,
       openTraps,
+      stuckOnTraps,
       allowAppearingWall: true,
     })
   ) {
@@ -102,35 +105,82 @@ export function canChipStepOnto(
   return true;
 }
 
+/** Whether a movable block may occupy a cell (push / teleport exit). */
+export function canBlockLandAt(
+  level: LevelData,
+  x: number,
+  y: number,
+  chipsRemainingOnMap: number,
+  openTraps?: Set<string>,
+  stuckOnTraps?: Set<string>,
+): boolean {
+  if (x < 0 || x >= level.width || y < 0 || y >= level.height) {
+    return false;
+  }
+  const tile = getCompositeTile(level, x, y);
+  if (tile === "water") {
+    return true;
+  }
+  if (isDirtCell(level, x, y) || isWetDirtCell(level, x, y)) {
+    return false;
+  }
+  if (tile === "empty" || tile === "gravel") {
+    return true;
+  }
+  if (brownButtonTileAt(level, x, y)) {
+    return true;
+  }
+  if (isFunctioningTeleportAt(level, x, y)) {
+    return true;
+  }
+  if (isBlockTile(tile) || isMonsterTile(tile) || isDoorTile(tile) || isExitTile(tile)) {
+    return false;
+  }
+  if (isSocketTile(tile) && chipsRemainingOnMap > 0) {
+    return false;
+  }
+  if (tile === "chip" || tile.startsWith("chip_") || tile.startsWith("key_")) {
+    return false;
+  }
+  if (isBlockedCell(level, x, y, {
+    chipsRemainingOnMap,
+    openTraps,
+    stuckOnTraps,
+    allowAppearingWall: true,
+  })) {
+    return false;
+  }
+  return false;
+}
+
 export type BlueTeleportResolution =
   | { kind: "warp"; x: number; y: number }
   | { kind: "through"; x: number; y: number }
   | { kind: "bounce" };
 
-/**
- * MS blue teleport at (inX, inY) with entry movement direction `entryDir`.
- * Exit is the cell on the exit face of the destination pad (same direction as travel).
- */
-export function resolveBlueTeleport(
+function resolveBlueTeleportWith(
   level: LevelData,
   inX: number,
   inY: number,
   entryDir: Direction,
-  state: MsCc1PlayerState,
-  openTraps?: Set<string>,
+  canOccupy: (x: number, y: number) => boolean,
+  options?: { entryIsFunctioningPad?: boolean },
 ): BlueTeleportResolution {
   const { dx, dy } = directionDelta(entryDir);
   const throughX = inX + dx;
   const throughY = inY + dy;
 
   const failAsIce = (): BlueTeleportResolution => {
-    if (canChipStepOnto(level, throughX, throughY, state, openTraps)) {
+    if (canOccupy(throughX, throughY)) {
       return { kind: "through", x: throughX, y: throughY };
     }
     return { kind: "bounce" };
   };
 
-  if (!isFunctioningTeleportAt(level, inX, inY)) {
+  const entryOk =
+    options?.entryIsFunctioningPad === true ||
+    isFunctioningTeleportAt(level, inX, inY);
+  if (!entryOk) {
     return failAsIce();
   }
 
@@ -151,10 +201,60 @@ export function resolveBlueTeleport(
     }
     const exitX = cx + dx;
     const exitY = cy + dy;
-    if (canChipStepOnto(level, exitX, exitY, state, openTraps)) {
+    if (canOccupy(exitX, exitY)) {
       return { kind: "warp", x: exitX, y: exitY };
     }
   }
 
   return failAsIce();
+}
+
+/**
+ * MS blue teleport at (inX, inY) with entry movement direction `entryDir`.
+ * Exit is the cell on the exit face of the destination pad (same direction as travel).
+ */
+export function resolveBlueTeleport(
+  level: LevelData,
+  inX: number,
+  inY: number,
+  entryDir: Direction,
+  state: MsCc1PlayerState,
+  openTraps?: Set<string>,
+  stuckOnTraps?: Set<string>,
+): BlueTeleportResolution {
+  const { dx, dy } = directionDelta(entryDir);
+  return resolveBlueTeleportWith(level, inX, inY, entryDir, (x, y) => {
+    if (canChipStepOnto(level, x, y, state, openTraps, stuckOnTraps)) {
+      return true;
+    }
+    if (isBlockTile(getCompositeTile(level, x, y))) {
+      return canBlockLandAt(
+        level,
+        x + dx,
+        y + dy,
+        state.chipsRemainingOnMap,
+        openTraps,
+        stuckOnTraps,
+      );
+    }
+    return false;
+  });
+}
+
+/** Same pad network as Chip, using block occupancy rules on the exit face. */
+export function resolveBlueTeleportForBlock(
+  level: LevelData,
+  inX: number,
+  inY: number,
+  entryDir: Direction,
+  chipsRemainingOnMap: number,
+): BlueTeleportResolution {
+  return resolveBlueTeleportWith(
+    level,
+    inX,
+    inY,
+    entryDir,
+    (x, y) => canBlockLandAt(level, x, y, chipsRemainingOnMap),
+    { entryIsFunctioningPad: true },
+  );
 }

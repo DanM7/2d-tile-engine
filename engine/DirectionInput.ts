@@ -191,6 +191,7 @@ export class DirectionInput {
       if (this.heldKeys.length === 0) {
         this.stopRepeatTimer();
       }
+      this.emitReleaseIfIdle();
     };
 
     this.blurListener = () => this.releaseAllKeys();
@@ -235,6 +236,7 @@ export class DirectionInput {
     } else {
       this.syncActiveDirection();
     }
+    this.emitReleaseIfIdle();
   }
 
   private syncActiveDirection(): void {
@@ -270,10 +272,22 @@ export class DirectionInput {
     this.dpadHoldDirection = null;
     this.activeDirection = null;
     this.stopRepeatTimer();
+    this.emitReleaseIfIdle();
+  }
+
+  private emitReleaseIfIdle(): void {
+    if (!this.activeDirection) {
+      this.bus.emitDirectionRelease();
+    }
   }
 
   /** Whether a direction key or d-pad hold is currently active. */
   hasActiveDirection(): boolean {
     return this.activeDirection != null;
+  }
+
+  /** Held direction for force-floor combine while a key or d-pad is active. */
+  getActiveDirection(): Direction | null {
+    return this.activeDirection;
   }
 }

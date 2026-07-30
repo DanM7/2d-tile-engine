@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LevelData } from "../engine/types.js";
 import {
+  getCompositeTile,
+} from "../engine/levelRuntime.js";
+import {
   resolveBlueTeleport,
+  resolveBlueTeleportForBlock,
   reverseWrappableNext,
 } from "../engine/msCc1/msCc1Teleports.js";
 import {
@@ -68,6 +72,18 @@ describe("resolveBlueTeleport", () => {
   });
 });
 
+describe("resolveBlueTeleportForBlock", () => {
+  it("warps a block to the same exit face as Chip", () => {
+    const level = levelFromGrid({
+      "3,0": "teleport",
+      "6,0": "teleport",
+      "7,0": "empty",
+    });
+    const r = resolveBlueTeleportForBlock(level, 3, 0, "right", 0);
+    expect(r).toEqual({ kind: "warp", x: 7, y: 0 });
+  });
+});
+
 describe("tryMsCc1Move teleports", () => {
   it("teleports Chip through a pad chain", () => {
     const level = levelFromGrid({
@@ -93,5 +109,29 @@ describe("tryMsCc1Move teleports", () => {
     const r = tryMsCc1Move(level, { x: 1, y: 0 }, "right", state);
     expect(r.moved).toBe(true);
     expect(r.position).toEqual({ x: 1, y: 0 });
+  });
+
+  it("teleports a pushed block then Chip can follow and push it again", () => {
+    const level = levelFromGrid({
+      "0,0": "chip_s",
+      "1,0": "block_movable",
+      "2,0": "teleport",
+      "6,0": "teleport",
+      "7,0": "empty",
+      "8,0": "empty",
+    });
+    const state = msCc1StateFromRun([], 0);
+    const push = tryMsCc1Move(level, { x: 0, y: 0 }, "right", state);
+    expect(push.moved).toBe(true);
+    expect(push.position).toEqual({ x: 1, y: 0 });
+    expect(getCompositeTile(level, 2, 0)).toBe("teleport");
+    expect(getCompositeTile(level, 7, 0)).toBe("block_movable");
+    expect(getCompositeTile(level, 8, 0)).toBe("empty");
+
+    const follow = tryMsCc1Move(level, { x: 1, y: 0 }, "right", state);
+    expect(follow.moved).toBe(true);
+    expect(follow.position).toEqual({ x: 7, y: 0 });
+    expect(getCompositeTile(level, 8, 0)).toBe("block_movable");
+    expect(getCompositeTile(level, 2, 0)).toBe("teleport");
   });
 });

@@ -10,6 +10,16 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:integration": "vitest run test/integration",
+    "sync:bitbusters": "node scripts/bootstrapSolutionsFromReference.mjs && node scripts/syncBitBustersSolutions.mjs && node scripts/copySolutionsToWeb.mjs",
+    "copy:solutions": "node scripts/copySolutionsToWeb.mjs",
+    "import:tws": "npx tsx scripts/importTwsSolutions.mjs && node scripts/copySolutionsToWeb.mjs",
+    "fetch:cc1-tws": "node scripts/fetchCc1MsTws.mjs",
+    "export:cc1-tws": "python scripts/exportCc1MsTwsRecords.py",
+    "import:cc1-tws": "node scripts/importTwsRecords.mjs 5 149 && node scripts/copySolutionsToWeb.mjs",
+    "setup:cc1-tws": "node scripts/fetchCc1MsTws.mjs && python scripts/exportCc1MsTwsRecords.py && node scripts/importTwsRecords.mjs 5 149 && node scripts/copySolutionsToWeb.mjs",
+    "verify:batch": "npx tsx scripts/batchVerifySolutions.ts",
+    "verify:batch:5-149": "npx tsx scripts/batchVerifySolutions.ts 5 149",
     "build": "tsc --noEmit"
   },
   "dependencies": {

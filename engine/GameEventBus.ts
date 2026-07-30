@@ -9,6 +9,10 @@ export class GameEventBus extends EventTarget {
     this.dispatchEvent(new CustomEvent("direction", { detail: direction }));
   }
 
+  emitDirectionRelease(): void {
+    this.dispatchEvent(new CustomEvent("direction-release"));
+  }
+
   onDirection(handler: (direction: Direction) => void): () => void {
     const listener = (event: Event): void => {
       const { detail } = event as CustomEvent<Direction>;
@@ -16,5 +20,11 @@ export class GameEventBus extends EventTarget {
     };
     this.addEventListener("direction", listener);
     return () => this.removeEventListener("direction", listener);
+  }
+
+  onDirectionRelease(handler: () => void): () => void {
+    const listener = (): void => handler();
+    this.addEventListener("direction-release", listener);
+    return () => this.removeEventListener("direction-release", listener);
   }
 }

@@ -2,6 +2,8 @@ import type { Direction } from "../types.js";
 import { CHIP_TILE_IDS } from "../../tile-engine/tiles.js";
 import { cellTile, getCompositeTile, getFloorTileId } from "../levelRuntime.js";
 import {
+  combineMoveIntents,
+  isZeroMoveIntent,
   moveIntentFromDirection,
   type MoveIntent,
 } from "../moveIntent.js";
@@ -155,6 +157,18 @@ export function getForceFloorIntentAt(
   const tile = getForceFloorTileAt(level, x, y);
   const direction = tile ? forceFloorDirection(tile) : null;
   return direction ? moveIntentFromDirection(direction) : null;
+}
+
+/** Involuntary force slide uses force axis; held input only when it combines non-zero. */
+export function resolveForceSlideIntent(
+  forceIntent: MoveIntent,
+  heldDirection: Direction | null,
+): MoveIntent {
+  if (!heldDirection) {
+    return forceIntent;
+  }
+  const combined = combineMoveIntents(forceIntent, moveIntentFromDirection(heldDirection));
+  return isZeroMoveIntent(combined) ? forceIntent : combined;
 }
 
 export function forceFloorDirection(tileId: string): Direction | null {

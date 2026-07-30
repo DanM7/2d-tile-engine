@@ -28,6 +28,8 @@ export interface BlockedCellOptions {
   chipsRemainingOnMap?: number;
   /** MS bear-trap cells opened by brown buttons (still drawn; passable). */
   openTraps?: Set<string>;
+  /** Closed traps with a creature stuck on them (impassable to others). */
+  stuckOnTraps?: Set<string>;
   /** When true, recessed walls do not block (Chip may step on them once). */
   allowAppearingWall?: boolean;
 }
@@ -103,9 +105,13 @@ export function isBlockedCell(
   }
   if (DOOR_TILE_IDS.has(upper) || DOOR_TILE_IDS.has(lower)) return true;
   const trapKey = `${x},${y}`;
-  const trapOpen = options?.openTraps?.has(trapKey) ?? false;
-  if ((upper === "trap" || lower === "trap") && !trapOpen) {
-    return true;
+  const isTrap = upper === "trap" || lower === "trap";
+  if (isTrap) {
+    const trapOpen = options?.openTraps?.has(trapKey) ?? false;
+    if (trapOpen) {
+      return false;
+    }
+    return options?.stuckOnTraps?.has(trapKey) ?? false;
   }
   if (
     (MS_POPUP_WALL_TILE_IDS.has(upper) || MS_POPUP_WALL_TILE_IDS.has(lower)) &&

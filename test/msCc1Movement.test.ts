@@ -6,6 +6,7 @@ import {
   msCc1StateFromRun,
   MS_DEATH_NO_FIRE_BOOTS,
   MS_DEATH_NO_FLIPPERS,
+  MS_DEATH_NO_BOMBS,
 } from "../engine/msCc1/msCc1Movement.js";
 
 function levelFromGrid(
@@ -104,6 +105,29 @@ describe("tryMsCc1Move", () => {
     const state = msCc1StateFromRun([], 0, ["ice_skates"]);
     const r = tryMsCc1Move(level, { x: 0, y: 1 }, "right", state);
     expect(r.position).toEqual({ x: 1, y: 1 });
+  });
+
+  it("bounces off force_n when stepping down onto it", () => {
+    const level = levelFromGrid({
+      "0,0": "chip_s",
+      "0,1": "force_n",
+      "0,2": "empty",
+    });
+    const state = msCc1StateFromRun([], 0);
+    const r = tryMsCc1Move(level, { x: 0, y: 0 }, "down", state);
+    expect(r.position).toEqual({ x: 0, y: 0 });
+  });
+
+  it("slides east along a horizontal force_e strip", () => {
+    const level = levelFromGrid({
+      "0,1": "chip_s",
+      "1,1": "force_e",
+      "2,1": "force_e",
+      "3,1": "empty",
+    });
+    const state = msCc1StateFromRun([], 0);
+    const r = tryMsCc1Move(level, { x: 0, y: 1 }, "right", state);
+    expect(r.position).toEqual({ x: 3, y: 1 });
   });
 
   it("slides on force floor without suction boots", () => {
@@ -324,6 +348,32 @@ describe("tryMsCc1Move", () => {
     expect(getCompositeTile(level, 1, 0)).toBe("chip_burned");
   });
 
+  it("dies on bomb with MS message and no burnt splash tile", () => {
+    const level = levelFromGrid({
+      "0,0": "chip_s",
+      "1,0": "bomb",
+    });
+    const r = tryMsCc1Move(level, { x: 0, y: 0 }, "right", msCc1StateFromRun([], 0));
+    expect(r.moved).toBe(true);
+    expect(r.playerDied).toBe(true);
+    expect(r.deathMessage).toBe(MS_DEATH_NO_BOMBS);
+    expect(getCompositeTile(level, 1, 0)).toBe("empty");
+  });
+
+  it("detonates bomb and block when a block is pushed onto a bomb", () => {
+    const level = levelFromGrid({
+      "0,0": "chip_s",
+      "1,0": "block_movable",
+      "2,0": "bomb",
+    });
+    const r = tryMsCc1Move(level, { x: 0, y: 0 }, "right", msCc1StateFromRun([], 0));
+    expect(r.moved).toBe(true);
+    expect(r.position).toEqual({ x: 1, y: 0 });
+    expect(getCompositeTile(level, 1, 0)).toBe("empty");
+    expect(getCompositeTile(level, 2, 0)).toBe("empty");
+    expect(r.playerDied).toBeFalsy();
+  });
+
   it("walks on fire with fire boots", () => {
     const level = levelFromGrid({
       "0,0": "chip_s",
@@ -460,5 +510,38 @@ describe("tryMsCc1Move", () => {
     r = tryMsCc1Move(level, pos, "right", state);
     state = r.state;
     expect(state.keys).toContain("key_green");
+  });
+
+  it("stacks same-color keys so each door consumes one", () => {
+    const level = levelFromGrid({
+      "0,0": "chip_s",
+      "1,0": "key_red",
+      "2,0": "key_red",
+      "3,0": "door_red",
+      "4,0": "door_red",
+    });
+    let pos = { x: 0, y: 0 };
+    let state = msCc1StateFromRun([], 0);
+
+    let r = tryMsCc1Move(level, pos, "right", state);
+    pos = r.position;
+    state = r.state;
+    r = tryMsCc1Move(level, pos, "right", state);
+    pos = r.position;
+    state = r.state;
+    expect(state.keys.filter((k) => k === "key_red")).toHaveLength(2);
+    expect(getCompositeTile(level, 1, 0)).toBe("empty");
+    expect(getCompositeTile(level, 2, 0)).toBe("empty");
+
+    r = tryMsCc1Move(level, pos, "right", state);
+    pos = r.position;
+    state = r.state;
+    expect(r.moved).toBe(true);
+    expect(state.keys.filter((k) => k === "key_red")).toHaveLength(1);
+
+    r = tryMsCc1Move(level, pos, "right", state);
+    state = r.state;
+    expect(r.moved).toBe(true);
+    expect(state.keys.filter((k) => k === "key_red")).toHaveLength(0);
   });
 });

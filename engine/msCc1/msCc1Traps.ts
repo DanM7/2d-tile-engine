@@ -1,14 +1,8 @@
-import {
-  cellTile,
-  removeTileAt,
-  setLowerTile,
-  setUpperTile,
-} from "../levelRuntime.js";
+import { cellTile } from "../levelRuntime.js";
 import type { LevelData } from "../types.js";
 import type { MsCc1CellChange } from "./types.js";
 import type { MsCc1MonsterState } from "./msCc1Monsters.js";
 import type { MsCc1ButtonPressContext } from "./msCc1Buttons.js";
-import { monsterTileId, type MonsterFacing } from "./monsterDirection.js";
 
 export const TRAP_TILE_ID = "trap";
 
@@ -31,14 +25,79 @@ export function isTrapOpen(
   return ctx.openTraps.has(trapCellKey(x, y));
 }
 
-/** Closed traps block movement; open traps are passable (MS acting floor). */
+/**
+ * Closed trap occupied by a stuck creature — impassable to others.
+ * Empty closed traps may be entered (creature becomes stuck).
+ */
+export type TrapMechanicsCtx = Pick<MsCc1ButtonPressContext, "openTraps"> & {
+  stuckOnTraps?: Set<string>;
+};
+
+export function isTrapBlockingEntry(
+  level: LevelData,
+  x: number,
+  y: number,
+  ctx: TrapMechanicsCtx,
+): boolean {
+  if (!isTrapCell(level, x, y) || isTrapOpen(ctx, x, y)) {
+    return false;
+  }
+  return (ctx.stuckOnTraps ?? new Set()).has(trapCellKey(x, y));
+}
+
+/** @deprecated Use {@link isTrapBlockingEntry}. */
 export function isClosedTrapAt(
   level: LevelData,
   x: number,
   y: number,
-  ctx: Pick<MsCc1ButtonPressContext, "openTraps">,
+  ctx: TrapMechanicsCtx,
 ): boolean {
-  return isTrapCell(level, x, y) && !isTrapOpen(ctx, x, y);
+  return isTrapBlockingEntry(level, x, y, ctx);
+}
+
+export function isCreatureStuckOnTrap(
+  ctx: { stuckOnTraps?: Set<string> },
+  x: number,
+  y: number,
+): boolean {
+  return (ctx.stuckOnTraps ?? new Set()).has(trapCellKey(x, y));
+}
+
+/** MS: stepping a closed bear trap holds the creature until the trap opens. */
+export function stickCreatureOnTrap(
+  level: LevelData,
+  x: number,
+  y: number,
+  ctx: TrapMechanicsCtx & { stuckOnTraps: Set<string> },
+): boolean {
+  if (!isTrapCell(level, x, y) || isTrapOpen(ctx, x, y)) {
+    return false;
+  }
+  ctx.stuckOnTraps.add(trapCellKey(x, y));
+  return true;
+}
+
+function brownButtonKey(x: number, y: number): string {
+  return `${x},${y}`;
+}
+
+/**
+ * MS: a block on a brown button holds it and opens the linked trap(s).
+ * Releases creatures stuck on the linked trap.
+ */
+export function applyBrownButtonHeldByBlock(
+  level: LevelData,
+  buttonX: number,
+  buttonY: number,
+  monsters: MsCc1MonsterState[],
+  cellChanges: MsCc1CellChange[],
+  ctx: MsCc1ButtonPressContext,
+): void {
+  if (!brownButtonTileAt(level, buttonX, buttonY)) {
+    return;
+  }
+  ctx.heldBrownButtons.add(brownButtonKey(buttonX, buttonY));
+  openTrapForBrownButton(level, buttonX, buttonY, monsters, cellChanges, ctx);
 }
 
 function findTrapLinkByButton(level: LevelData, buttonX: number, buttonY: number) {
@@ -57,127 +116,9 @@ function recordTrapOpened(cellChanges: MsCc1CellChange[], x: number, y: number):
   cellChanges.push({ x, y, placedTileId: TRAP_TILE_ID });
 }
 
-/** Teleport a creature onto a cell (trap / brown-button choreography). */
-export function teleportMonster(
-  level: LevelData,
-  monster: MsCc1MonsterState,
-  toX: number,
-  toY: number,
-  facing: MonsterFacing,
-  cellChanges: MsCc1CellChange[],
-): void {
-  if (!monster.alive) {
-    return;
-  }
-
-  const fromX = monster.x;
-  const fromY = monster.y;
-  const oldTile = monster.tileId;
-
-  if (fromX === toX && fromY === toY && monster.direction === facing) {
-    return;
-  }
-
-  removeTileAt(level, fromX, fromY, oldTile);
-  cellChanges.push({ x: fromX, y: fromY, removedTileId: oldTile });
-
-  const destUpper = cellTile(level, "upper", toX, toY);
-  if (destUpper === "button_brown") {
-    setLowerTile(level, toX, toY, "button_brown");
-  } else if (isTrapCell(level, toX, toY)) {
-    setLowerTile(level, toX, toY, TRAP_TILE_ID);
-    const i = toY * level.width + toX;
-    if (level.layers.upper[i] === TRAP_TILE_ID) {
-      level.layers.upper[i] = "empty";
-    }
-  }
-
-  const newTile = monsterTileId(monster.kind, facing);
-  setUpperTile(level, toX, toY, newTile);
-  cellChanges.push({ x: toX, y: toY, placedTileId: newTile });
-
-  monster.x = toX;
-  monster.y = toY;
-  monster.direction = facing;
-  monster.tileId = newTile;
-}
-
-function findGliderMonster(
-  level: LevelData,
-  monsters: MsCc1MonsterState[],
-): MsCc1MonsterState | undefined {
-  const listed = monsters.find((m) => m.alive && m.kind === "ghost");
-  if (listed) {
-    return listed;
-  }
-  for (let y = 0; y < level.height; y++) {
-    for (let x = 0; x < level.width; x++) {
-      const tileId = cellTile(level, "upper", x, y);
-      if (!tileId.startsWith("ghost_")) {
-        continue;
-      }
-      const at = monsters.find((m) => m.alive && m.x === x && m.y === y);
-      if (at) {
-        return at;
-      }
-    }
-  }
-  return undefined;
-}
-
-/** Park the lesson glider on the first brown button (large brown dot). */
-export function parkGliderOnFirstBrownButton(
-  level: LevelData,
-  monsters: MsCc1MonsterState[],
-): void {
-  const link = level.trapLinks?.[0];
-  const glider = findGliderMonster(level, monsters);
-  if (!link || !glider) {
-    return;
-  }
-  teleportMonster(level, glider, link.button.x, link.button.y, "north", []);
-}
-
-function advanceGliderAfterTrapOpened(
-  level: LevelData,
-  openedLink: NonNullable<LevelData["trapLinks"]>[number],
-  linkIndex: number,
-  monsters: MsCc1MonsterState[],
-  cellChanges: MsCc1CellChange[],
-): void {
-  const glider = monsters.find((m) => m.alive && m.kind === "ghost");
-  if (!glider || !level.trapLinks || level.trapLinks.length < 2) {
-    return;
-  }
-
-  if (linkIndex === 0) {
-    const nextButton = level.trapLinks[1]!.button;
-    teleportMonster(
-      level,
-      glider,
-      nextButton.x,
-      nextButton.y,
-      "north",
-      cellChanges,
-    );
-    return;
-  }
-
-  if (linkIndex === 1) {
-    teleportMonster(
-      level,
-      glider,
-      openedLink.trap.x,
-      openedLink.trap.y,
-      "north",
-      cellChanges,
-    );
-  }
-}
-
 /**
  * MS: brown button opens its linked trap (tile stays; marked open in ctx).
- * Lesson 5: advances the glider between brown buttons / onto the second trap.
+ * Releases any creature stuck on that trap so it can move on the next tick.
  */
 export function openTrapForBrownButton(
   level: LevelData,
@@ -194,7 +135,7 @@ export function openTrapForBrownButton(
   return openLinkedTrap(level, link, monsters, cellChanges, ctx);
 }
 
-/** Stepping a trap tile opens it via its linked brown button (MS lesson 5). */
+/** Open a trap by its cell (same effect as pressing its linked brown button). */
 export function openTrapFromTrapStep(
   level: LevelData,
   trapX: number,
@@ -213,7 +154,7 @@ export function openTrapFromTrapStep(
 function openLinkedTrap(
   level: LevelData,
   link: NonNullable<LevelData["trapLinks"]>[number],
-  monsters: MsCc1MonsterState[],
+  _monsters: MsCc1MonsterState[],
   cellChanges: MsCc1CellChange[],
   ctx: MsCc1ButtonPressContext,
 ): boolean {
@@ -228,14 +169,8 @@ function openLinkedTrap(
   }
 
   ctx.openTraps.add(key);
+  ctx.stuckOnTraps.delete(key);
   recordTrapOpened(cellChanges, x, y);
-
-  const linkIndex =
-    level.trapLinks?.findIndex(
-      (l) => l.button.x === link.button.x && l.button.y === link.button.y,
-    ) ?? -1;
-
-  advanceGliderAfterTrapOpened(level, link, linkIndex, monsters, cellChanges);
 
   return true;
 }

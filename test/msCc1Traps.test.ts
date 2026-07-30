@@ -3,7 +3,7 @@ import type { LevelData } from "../engine/types.js";
 import { getCompositeTile, cellTile } from "../engine/levelRuntime.js";
 import { createMsCc1Monsters, tickMsCc1Monsters } from "../engine/msCc1/msCc1Monsters.js";
 import { applyButtonPressAt } from "../engine/msCc1/msCc1Buttons.js";
-import { openTrapFromTrapStep } from "../engine/msCc1/msCc1Traps.js";
+import { isCreatureStuckOnTrap } from "../engine/msCc1/msCc1Traps.js";
 
 function levelFromGrid(
   cells: Record<string, string>,
@@ -32,8 +32,18 @@ function levelFromGrid(
   };
 }
 
+function emptyCtx() {
+  return {
+    redButtonArmed: new Set<string>(),
+    openTraps: new Set<string>(),
+    stuckOnTraps: new Set<string>(),
+    heldBrownButtons: new Set<string>(),
+    moveBoundary: 0,
+  };
+}
+
 describe("msCc1Traps", () => {
-  it("parks the glider on the first brown button at level start", () => {
+  it("does not move the glider onto the brown button at level start", () => {
     const level = levelFromGrid(
       {
         "1,1": "button_brown",
@@ -46,19 +56,19 @@ describe("msCc1Traps", () => {
     );
     const monsters = createMsCc1Monsters(level);
     const glider = monsters.find((m) => m.kind === "ghost");
-    expect(glider?.x).toBe(1);
-    expect(glider?.y).toBe(1);
-    expect(cellTile(level, "lower", 1, 1)).toBe("button_brown");
+    expect(glider?.x).toBe(3);
+    expect(glider?.y).toBe(3);
+    expect(getCompositeTile(level, 1, 1)).toBe("button_brown");
   });
 
-  it("stepping a trap moves the glider to the next brown button", () => {
+  it("pressing a brown button opens the trap and releases a stuck glider (no teleport)", () => {
     const level = levelFromGrid(
       {
         "1,1": "button_brown",
         "3,1": "trap",
         "1,3": "button_brown",
         "3,3": "trap",
-        "1,4": "ghost_n",
+        "3,4": "ghost_n",
       },
       8,
       8,
@@ -67,33 +77,41 @@ describe("msCc1Traps", () => {
         { button: { x: 1, y: 3 }, trap: { x: 3, y: 3 } },
       ],
     );
-    level.monsters = [{ x: 1, y: 4, direction: "north" }];
+    level.monsters = [{ x: 3, y: 4, direction: "north" }];
     const monsters = createMsCc1Monsters(level);
-    const ctx = {
-      redButtonArmed: new Set<string>(),
-      openTraps: new Set<string>(),
-      moveBoundary: 0,
-    };
-    const changes: { x: number; y: number }[] = [];
+    const ctx = emptyCtx();
+    const glider = monsters.find((m) => m.kind === "ghost")!;
 
-    openTrapFromTrapStep(level, 3, 1, monsters, changes, ctx);
+    tickMsCc1Monsters(
+      level,
+      monsters,
+      { x: 0, y: 0 },
+      0,
+      (from, to, changes) => applyButtonPressAt(level, from, to, monsters, changes, ctx),
+      ctx,
+    );
+    expect(glider.x).toBe(3);
+    expect(glider.y).toBe(3);
+    expect(isCreatureStuckOnTrap(ctx, 3, 3)).toBe(true);
 
-    const glider = monsters.find((m) => m.kind === "ghost");
-    expect(glider?.x).toBe(1);
-    expect(glider?.y).toBe(3);
-    expect(ctx.openTraps.has("3,1")).toBe(true);
-    expect(getCompositeTile(level, 3, 1)).toBe("trap");
+    applyButtonPressAt(level, { x: 1, y: 2 }, { x: 1, y: 3 }, monsters, [], ctx);
+
+    expect(ctx.openTraps.has("3,3")).toBe(true);
+    expect(isCreatureStuckOnTrap(ctx, 3, 3)).toBe(false);
+    expect(glider.x).toBe(3);
+    expect(glider.y).toBe(3);
+    expect(getCompositeTile(level, 3, 3)).toMatch(/^ghost_/);
   });
 
-  it("opening the second trap lets the glider move north toward bombs", () => {
-    const level =     levelFromGrid(
+  it("after both traps open, glider walks north toward bombs", () => {
+    const level = levelFromGrid(
       {
         "2,1": "wall",
         "2,2": "button_brown",
         "4,2": "trap",
         "2,4": "button_brown",
         "4,4": "trap",
-        "2,5": "ghost_n",
+        "4,5": "ghost_n",
       },
       8,
       8,
@@ -102,24 +120,34 @@ describe("msCc1Traps", () => {
         { button: { x: 2, y: 4 }, trap: { x: 4, y: 4 } },
       ],
     );
-    level.monsters = [{ x: 2, y: 5, direction: "north" }];
+    level.monsters = [{ x: 4, y: 5, direction: "north" }];
     const monsters = createMsCc1Monsters(level);
-    const ctx = {
-      redButtonArmed: new Set<string>(),
-      openTraps: new Set<string>(),
-      moveBoundary: 0,
-    };
-
-    openTrapFromTrapStep(level, 4, 2, monsters, [], ctx);
-    openTrapFromTrapStep(level, 4, 4, monsters, [], ctx);
-
+    const ctx = emptyCtx();
     const glider = monsters.find((m) => m.kind === "ghost")!;
-    expect(glider.x).toBe(4);
-    expect(glider.y).toBe(4);
 
-    tickMsCc1Monsters(level, monsters, { x: 0, y: 0 }, 0, undefined, ctx);
+    const afterStep = (
+      from: { x: number; y: number },
+      to: { x: number; y: number },
+      changes: { x: number; y: number }[],
+    ) => applyButtonPressAt(level, from, to, monsters, changes, ctx);
+
+    tickMsCc1Monsters(level, monsters, { x: 0, y: 0 }, 0, afterStep, ctx);
+    expect(isCreatureStuckOnTrap(ctx, 4, 4)).toBe(true);
+
+    applyButtonPressAt(level, { x: 2, y: 3 }, { x: 2, y: 4 }, monsters, [], ctx);
+    tickMsCc1Monsters(level, monsters, { x: 0, y: 0 }, 0, afterStep, ctx);
+    expect(glider.y).toBeLessThan(4);
+
+    // Walk into second trap and stick, then release
+    for (let i = 0; i < 4; i++) {
+      tickMsCc1Monsters(level, monsters, { x: 0, y: 0 }, 0, afterStep, ctx);
+    }
+    if (isCreatureStuckOnTrap(ctx, 4, 2)) {
+      applyButtonPressAt(level, { x: 2, y: 1 }, { x: 2, y: 2 }, monsters, [], ctx);
+      tickMsCc1Monsters(level, monsters, { x: 0, y: 0 }, 0, afterStep, ctx);
+    }
 
     expect(glider.alive).toBe(true);
-    expect(glider.y).toBeLessThan(4);
+    expect(glider.y).toBeLessThanOrEqual(2);
   });
 });

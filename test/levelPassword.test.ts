@@ -49,7 +49,7 @@ describe("resolveDefaultLaunchLevelNumber", () => {
   });
 
   it("falls back when index is missing", () => {
-    expect(resolveDefaultLaunchLevelNumber(null)).toBe(8);
+    expect(resolveDefaultLaunchLevelNumber(null)).toBe(1);
   });
 });
 

@@ -65,6 +65,8 @@ describe("msCc1Clone", () => {
     const ctx = {
       redButtonArmed: collectRedButtonCells(level),
       openTraps: new Set<string>(),
+      stuckOnTraps: new Set<string>(),
+      heldBrownButtons: new Set<string>(),
       moveBoundary: 0,
     };
     applyButtonPressAt(level, { x: 3, y: 1 }, { x: 3, y: 2 }, monsters, changes, ctx);
@@ -92,6 +94,8 @@ describe("msCc1Clone", () => {
     const ctx = {
       redButtonArmed: collectRedButtonCells(level),
       openTraps: new Set<string>(),
+      stuckOnTraps: new Set<string>(),
+      heldBrownButtons: new Set<string>(),
       moveBoundary: 0,
     };
     const afterStep = (
@@ -150,6 +154,8 @@ describe("msCc1Clone", () => {
     const ctx = {
       redButtonArmed: collectRedButtonCells(level),
       openTraps: new Set<string>(),
+      stuckOnTraps: new Set<string>(),
+      heldBrownButtons: new Set<string>(),
       moveBoundary: 0,
     };
 
@@ -180,6 +186,8 @@ describe("msCc1Clone", () => {
     const ctx = {
       redButtonArmed: new Set<string>(),
       openTraps: new Set<string>(),
+      stuckOnTraps: new Set<string>(),
+      heldBrownButtons: new Set<string>(),
       moveBoundary: 0,
     };
     applyButtonPressAt(

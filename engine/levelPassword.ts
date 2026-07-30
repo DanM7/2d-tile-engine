@@ -7,7 +7,7 @@ export const REGISTRY_PENDING_LEVEL_NUMBER = "pendingLevelNumber";
 export const DEFAULT_LAUNCH_LEVEL_ID = "level-001";
 
 /** Parsed from `DEFAULT_LAUNCH_LEVEL_ID`; last-resort numeric fallback. */
-export const DEFAULT_LAUNCH_LEVEL_NUMBER = 8;
+export const DEFAULT_LAUNCH_LEVEL_NUMBER = 1;
 
 /** Normalize a user-entered MS level password (4 ASCII letters, case-insensitive). */
 export function normalizeLevelPassword(raw: string): string {

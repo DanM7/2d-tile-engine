@@ -3,6 +3,7 @@ export {
   isExitTile,
   msCc1StateFromRun,
   MS_DEATH_NO_FLIPPERS,
+  MS_DEATH_NO_BOMBS,
 } from "./msCc1Movement.js";
 export {
   createMsCc1Monsters,
@@ -27,9 +28,12 @@ export {
 export {
   openTrapForBrownButton,
   openTrapFromTrapStep,
-  parkGliderOnFirstBrownButton,
+  applyBrownButtonHeldByBlock,
   isTrapOpen,
   isTrapCell,
+  isTrapBlockingEntry,
+  isCreatureStuckOnTrap,
+  stickCreatureOnTrap,
 } from "./msCc1Traps.js";
 export {
   resolveBlueTeleport,
@@ -44,3 +48,8 @@ export type {
   MsCc1MoveStep,
   MsCc1PlayerState,
 } from "./types.js";
+export {
+  simulateMsCc1Level,
+  type MsCc1SimulationResult,
+} from "./msCc1Simulation.js";
+export { msSecondsRemaining } from "./msCc1Timing.js";

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { LevelData } from "../engine/types.js";
 import { cellTile, getCompositeTile } from "../engine/levelRuntime.js";
 import { tryMsCc1Move, msCc1StateFromRun } from "../engine/msCc1/msCc1Movement.js";
@@ -15,6 +15,8 @@ function monsterCtx(
   return {
     redButtonArmed: new Set(),
     openTraps: new Set(),
+    stuckOnTraps: new Set(),
+    heldBrownButtons: new Set(),
     moveBoundary: 0,
     ...overrides,
   };
@@ -77,6 +79,20 @@ describe("createMsCc1Monsters", () => {
     const monsters = createMsCc1Monsters(level);
     expect(monsters).toHaveLength(1);
     expect(monsters[0]!.kind).toBe("frog");
+    expect(monsters[0]!.direction).toBe("north");
+  });
+
+  it("loads walkers from the monster list", () => {
+    const level = levelFromGrid(
+      { "4,2": "walker_n" },
+      8,
+      8,
+      {},
+      [{ x: 4, y: 2, direction: "north" }],
+    );
+    const monsters = createMsCc1Monsters(level);
+    expect(monsters).toHaveLength(1);
+    expect(monsters[0]!.kind).toBe("walker");
     expect(monsters[0]!.direction).toBe("north");
   });
 
@@ -189,6 +205,143 @@ describe("tickMsCc1Monsters", () => {
     expect(monsters[0]!.alive).toBe(true);
     expect(monsters[0]!.x).toBe(2);
     expect(monsters[0]!.y).toBe(2);
+  });
+
+  it("glider stepping onto a bomb destroys both glider and bomb", () => {
+    const level = levelFromGrid(
+      {
+        "1,2": "ghost_e",
+        "2,2": "bomb",
+      },
+      8,
+      8,
+      {},
+      [{ x: 1, y: 2, direction: "east" }],
+    );
+    const monsters = createMsCc1Monsters(level);
+    const tick = tickMsCc1Monsters(level, monsters, { x: 0, y: 0 }, 0);
+    expect(monsters[0]!.alive).toBe(false);
+    expect(getCompositeTile(level, 1, 2)).toBe("empty");
+    expect(getCompositeTile(level, 2, 2)).toBe("empty");
+    expect(tick.cellChanges.some((c) => c.removedTileId === "bomb")).toBe(true);
+  });
+
+  it("walker moves forward in a clear corridor", () => {
+    const level = levelFromGrid(
+      {
+        "0,2": "walker_e",
+        "1,2": "empty",
+        "2,2": "empty",
+      },
+      8,
+      8,
+      {},
+      [{ x: 0, y: 2, direction: "east" }],
+    );
+    const monsters = createMsCc1Monsters(level);
+    tickMsCc1Monsters(level, monsters, { x: 5, y: 5 }, 0);
+    expect(monsters[0]!.x).toBe(1);
+    expect(monsters[0]!.y).toBe(2);
+    expect(monsters[0]!.direction).toBe("east");
+  });
+
+  it("walker picks a random open direction when forward is blocked", () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+    const level = levelFromGrid(
+      {
+        "1,1": "wall",
+        "1,2": "walker_n",
+        "2,2": "empty",
+      },
+      8,
+      8,
+      {},
+      [{ x: 1, y: 2, direction: "north" }],
+    );
+    const monsters = createMsCc1Monsters(level);
+    tickMsCc1Monsters(level, monsters, { x: 5, y: 5 }, 0);
+    randomSpy.mockRestore();
+    expect(monsters[0]!.x).toBe(2);
+    expect(monsters[0]!.y).toBe(2);
+    expect(monsters[0]!.direction).toBe("east");
+  });
+
+  it("walker dies in water", () => {
+    const level = levelFromGrid(
+      {
+        "0,2": "walker_e",
+      },
+      8,
+      8,
+      { "1,2": "water" },
+      [{ x: 0, y: 2, direction: "east" }],
+    );
+    const monsters = createMsCc1Monsters(level);
+    tickMsCc1Monsters(level, monsters, { x: 5, y: 5 }, 0);
+    expect(monsters[0]!.alive).toBe(false);
+  });
+
+  it("fireball stepping on a chip leaves the chip when it moves away", () => {
+    const level = levelFromGrid(
+      {
+        "0,2": "fireball_e",
+        "1,2": "chip",
+        "2,2": "empty",
+      },
+      8,
+      8,
+      {},
+      [{ x: 0, y: 2, direction: "east" }],
+    );
+    const monsters = createMsCc1Monsters(level);
+    tickMsCc1Monsters(level, monsters, { x: 5, y: 5 }, 0);
+    expect(monsters[0]!.x).toBe(1);
+    expect(cellTile(level, "lower", 1, 2)).toBe("chip");
+    expect(getCompositeTile(level, 1, 2)).toBe("fireball_e");
+
+    tickMsCc1Monsters(level, monsters, { x: 5, y: 5 }, 0);
+    expect(monsters[0]!.x).toBe(2);
+    expect(getCompositeTile(level, 1, 2)).toBe("chip");
+    expect(cellTile(level, "lower", 1, 2)).toBe("empty");
+  });
+
+  it("pink ball bounces off a chip without removing it", () => {
+    const level = levelFromGrid(
+      {
+        "1,2": "ball_pink_e",
+        "2,2": "chip",
+      },
+      8,
+      8,
+      {},
+      [{ x: 1, y: 2, direction: "east" }],
+    );
+    const monsters = createMsCc1Monsters(level);
+    tickMsCc1Monsters(level, monsters, { x: 0, y: 0 }, 0);
+    expect(monsters[0]!.x).toBe(0);
+    expect(monsters[0]!.y).toBe(2);
+    expect(monsters[0]!.direction).toBe("west");
+    expect(getCompositeTile(level, 2, 2)).toBe("chip");
+  });
+
+  it("walker turns away from a chip without removing it", () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+    const level = levelFromGrid(
+      {
+        "1,2": "walker_n",
+        "1,1": "chip",
+        "0,1": "empty",
+      },
+      8,
+      8,
+      {},
+      [{ x: 1, y: 2, direction: "north" }],
+    );
+    const monsters = createMsCc1Monsters(level);
+    tickMsCc1Monsters(level, monsters, { x: 5, y: 5 }, 0);
+    randomSpy.mockRestore();
+    expect(getCompositeTile(level, 1, 1)).toBe("chip");
+    expect(monsters[0]!.x !== 1 || monsters[0]!.y !== 1).toBe(true);
   });
 
   it("pink ball bounces when forward is blocked", () => {

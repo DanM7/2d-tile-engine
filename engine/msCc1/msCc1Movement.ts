@@ -3,6 +3,7 @@ import {
   combineMoveIntents,
   directionFromMoveIntent,
   isPerpendicularMoveIntent,
+  isZeroMoveIntent,
   moveIntentFromDirection,
   type MoveIntent,
 } from "../moveIntent.js";
@@ -21,6 +22,7 @@ import {
   isWetDirtCell,
   removeCollectibleAt,
   removeTileAt,
+  setLowerTile,
   setUpperTile,
 } from "../levelRuntime.js";
 import {
@@ -48,11 +50,38 @@ import {
   slideDirectionAfterLanding,
 } from "./msCc1Sliding.js";
 import {
+  directionDelta,
   isFunctioningTeleportAt,
   isNonFunctioningTeleportAt,
   resolveBlueTeleport,
+  resolveBlueTeleportForBlock,
+  TELEPORT_TILE_ID,
 } from "./msCc1Teleports.js";
 import type { MsCc1ButtonPressContext } from "./msCc1Buttons.js";
+import {
+  applyBrownButtonHeldByBlock,
+  brownButtonTileAt,
+  isCreatureStuckOnTrap,
+  stickCreatureOnTrap,
+} from "./msCc1Traps.js";
+import type { MsCc1MonsterState } from "./msCc1Monsters.js";
+
+export type MsCc1MoveMechanics = Pick<
+  MsCc1ButtonPressContext,
+  "openTraps" | "stuckOnTraps"
+>;
+
+function moveMechanics(
+  trapCtx?: MsCc1ButtonPressContext,
+): MsCc1MoveMechanics | undefined {
+  if (!trapCtx) {
+    return undefined;
+  }
+  return {
+    openTraps: trapCtx.openTraps,
+    stuckOnTraps: trapCtx.stuckOnTraps,
+  };
+}
 import type {
   MsCc1CellChange,
   MsCc1MoveResult,
@@ -71,10 +100,21 @@ export const MS_DEATH_NO_FLIPPERS = "Ooops! Chip can't swim without flippers!";
 export const MS_DEATH_NO_FIRE_BOOTS =
   "Ooops! Don't step in the fire without fire boots!";
 
+/** MS death message when stepping on a bomb (CHIPS.EXE). */
+export const MS_DEATH_NO_BOMBS = "Ooops! Don't touch the bombs!";
+
 export const THIEF_TILE_ID = "thief";
 
 export function isExitTile(tileId: string): boolean {
   return EXIT_TILE_IDS.has(tileId);
+}
+
+/**
+ * Merge force push with voluntary input; opposing inputs cancel to zero — force still wins.
+ */
+function combineForceWithInput(forceIntent: MoveIntent, inputIntent: MoveIntent): MoveIntent {
+  const combined = combineMoveIntents(forceIntent, inputIntent);
+  return isZeroMoveIntent(combined) ? forceIntent : combined;
 }
 
 /**
@@ -91,7 +131,7 @@ function stepIntentOnForceFloor(
   const inputIntent = moveIntentFromDirection(inputDirection);
   const standingForce = getForceFloorIntentAt(level, x, y, state);
   if (standingForce) {
-    const intent = combineMoveIntents(standingForce, inputIntent);
+    const intent = combineForceWithInput(standingForce, inputIntent);
     return {
       intent,
       direction: directionFromMoveIntent(intent),
@@ -104,7 +144,7 @@ function stepIntentOnForceFloor(
     upstreamForce &&
     isPerpendicularMoveIntent(upstreamForce, inputIntent)
   ) {
-    const intent = combineMoveIntents(upstreamForce, inputIntent);
+    const intent = combineForceWithInput(upstreamForce, inputIntent);
     return {
       intent,
       direction: directionFromMoveIntent(intent),
@@ -131,6 +171,10 @@ function isFireCell(level: LevelData, x: number, y: number): boolean {
   return getCompositeTile(level, x, y) === "fire";
 }
 
+function isBombCell(level: LevelData, x: number, y: number): boolean {
+  return getCompositeTile(level, x, y) === "bomb";
+}
+
 function consumeKey(state: MsCc1PlayerState, keyId: string): void {
   const index = state.keys.indexOf(keyId);
   if (index >= 0) {
@@ -139,8 +183,15 @@ function consumeKey(state: MsCc1PlayerState, keyId: string): void {
 }
 
 function tryAddKey(state: MsCc1PlayerState, keyId: string): boolean {
-  if (!isKeyTile(keyId) || state.keys.includes(keyId)) {
+  if (!isKeyTile(keyId)) {
     return false;
+  }
+  // MS: colored keys stack (one lock per key). Green is infinite — keep a single copy.
+  if (keyId === "key_green") {
+    if (!state.keys.includes(keyId)) {
+      state.keys.push(keyId);
+    }
+    return true;
   }
   state.keys.push(keyId);
   return true;
@@ -278,23 +329,45 @@ function applyFireBurnSplash(
   });
 }
 
+/** MS: bomb detonates with no splash tile (unlike fire). */
+function applyBombDetonation(
+  level: LevelData,
+  x: number,
+  y: number,
+  cellChanges: MsCc1CellChange[],
+): void {
+  if (removeTileAt(level, x, y, "bomb")) {
+    recordRemoval(cellChanges, x, y, "bomb");
+  }
+}
+
 /** Where a pushed block may land (MS: water becomes wet dirt; dirt blocks blocks). */
 function blockPushDestination(
   level: LevelData,
   x: number,
   y: number,
   chipsLeft: number,
-): "floor" | "water" | null {
+  mechanics?: MsCc1MoveMechanics,
+): "floor" | "water" | "bomb" | null {
   const tile = getCompositeTile(level, x, y);
+  if (tile === "bomb") return "bomb";
   if (tile === "water") return "water";
   if (isDirtCell(level, x, y) || isWetDirtCell(level, x, y)) return null;
   if (tile === "empty" || tile === "gravel") return "floor";
+  if (brownButtonTileAt(level, x, y)) return "floor";
+  if (isFunctioningTeleportAt(level, x, y)) return "floor";
   if (isBlockTile(tile) || isMonsterTile(tile)) return null;
   if (isDoorTile(tile) || isExitTile(tile)) return null;
   if (isSocketTile(tile) && chipsLeft > 0) return null;
   if (tile === COLLECTIBLE_CHIP_TILE_ID || isKeyTile(tile)) return null;
   if (CHIP_TILE_IDS.has(tile)) return null;
-  if (isBlockedCell(level, x, y, { chipsRemainingOnMap: chipsLeft })) {
+  if (
+    isBlockedCell(level, x, y, {
+      chipsRemainingOnMap: chipsLeft,
+      openTraps: mechanics?.openTraps,
+      stuckOnTraps: mechanics?.stuckOnTraps,
+    })
+  ) {
     return null;
   }
   return null;
@@ -308,6 +381,9 @@ function tryPushBlock(
   dy: number,
   chipsLeft: number,
   cellChanges: MsCc1CellChange[],
+  mechanics?: MsCc1MoveMechanics,
+  monsters?: MsCc1MonsterState[],
+  buttonCtx?: MsCc1ButtonPressContext,
 ): boolean {
   const beyondX = blockX + dx;
   const beyondY = blockY + dy;
@@ -315,13 +391,20 @@ function tryPushBlock(
     return false;
   }
 
-  const dest = blockPushDestination(level, beyondX, beyondY, chipsLeft);
+  const dest = blockPushDestination(level, beyondX, beyondY, chipsLeft, mechanics);
   if (!dest) {
     return false;
   }
 
+  const destButton = brownButtonTileAt(level, beyondX, beyondY);
+
   recordRemoval(cellChanges, blockX, blockY, BLOCK_MOVABLE_TILE_ID);
   removeTileAt(level, blockX, blockY, BLOCK_MOVABLE_TILE_ID);
+
+  if (dest === "bomb") {
+    applyBombDetonation(level, beyondX, beyondY, cellChanges);
+    return true;
+  }
 
   if (dest === "water") {
     // MS wet dirt: dirt on upper; water stays on lower until Chip dries the cell.
@@ -330,12 +413,63 @@ function tryPushBlock(
     }
     setUpperTile(level, beyondX, beyondY, "dirt");
     cellChanges.push({ x: beyondX, y: beyondY, placedTileId: "dirt" });
+  } else if (destButton) {
+    setLowerTile(level, beyondX, beyondY, "button_brown");
+    setUpperTile(level, beyondX, beyondY, BLOCK_MOVABLE_TILE_ID);
+    cellChanges.push({ x: beyondX, y: beyondY, placedTileId: BLOCK_MOVABLE_TILE_ID });
+    if (monsters && buttonCtx) {
+      applyBrownButtonHeldByBlock(
+        level,
+        beyondX,
+        beyondY,
+        monsters,
+        cellChanges,
+        buttonCtx,
+      );
+    }
   } else {
     setUpperTile(level, beyondX, beyondY, BLOCK_MOVABLE_TILE_ID);
     cellChanges.push({ x: beyondX, y: beyondY, placedTileId: BLOCK_MOVABLE_TILE_ID });
   }
 
   return true;
+}
+
+/** After a push onto a pad, MS warps the block to the paired portal exit face. */
+function tryTeleportPushedBlock(
+  level: LevelData,
+  padX: number,
+  padY: number,
+  entryDir: Direction,
+  chipsLeft: number,
+  cellChanges: MsCc1CellChange[],
+): void {
+  const resolution = resolveBlueTeleportForBlock(level, padX, padY, entryDir, chipsLeft);
+  if (resolution.kind !== "warp") {
+    return;
+  }
+
+  removeTileAt(level, padX, padY, BLOCK_MOVABLE_TILE_ID);
+  setUpperTile(level, padX, padY, TELEPORT_TILE_ID);
+  cellChanges.push({
+    x: padX,
+    y: padY,
+    removedTileId: BLOCK_MOVABLE_TILE_ID,
+    placedTileId: TELEPORT_TILE_ID,
+  });
+
+  const { x: exitX, y: exitY } = resolution;
+  const dest = blockPushDestination(level, exitX, exitY, chipsLeft, undefined);
+  if (dest === "water") {
+    if (cellTile(level, "upper", exitX, exitY) === "water") {
+      removeTileAt(level, exitX, exitY, "water");
+    }
+    setUpperTile(level, exitX, exitY, "dirt");
+    cellChanges.push({ x: exitX, y: exitY, placedTileId: "dirt" });
+  } else {
+    setUpperTile(level, exitX, exitY, BLOCK_MOVABLE_TILE_ID);
+    cellChanges.push({ x: exitX, y: exitY, placedTileId: BLOCK_MOVABLE_TILE_ID });
+  }
 }
 
 /** MS thief (spy): steals all boots; keys stay. Thief tile remains on the map. */
@@ -415,6 +549,7 @@ function completeSuccessfulMove(
   state: MsCc1PlayerState,
   cellChanges: MsCc1CellChange[],
   direction: Direction,
+  trapCtx?: MsCc1ButtonPressContext,
 ): MsCc1MoveResult {
   clearChipMarkerOnDepart(level, from.x, from.y, cellChanges);
   pickUpAt(level, to.x, to.y, state, cellChanges);
@@ -453,8 +588,27 @@ function completeSuccessfulMove(
     };
   }
 
+  if (isBombCell(level, to.x, to.y)) {
+    applyBombDetonation(level, to.x, to.y, cellChanges);
+    return {
+      moved: true,
+      position: to,
+      state,
+      cellChanges,
+      completedLevel: false,
+      direction,
+      playerDied: true,
+      deathMessage: MS_DEATH_NO_BOMBS,
+      steps: [],
+    };
+  }
+
   const standingTile = getCompositeTile(level, to.x, to.y);
   const completedLevel = isExitTile(standingTile) && state.chipsRemainingOnMap === 0;
+
+  if (trapCtx) {
+    stickCreatureOnTrap(level, to.x, to.y, trapCtx);
+  }
 
   return {
     moved: true,
@@ -495,9 +649,11 @@ export function tryMsCc1StepDelta(
   dx: number,
   dy: number,
   state: MsCc1PlayerState,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  trapCtx?: MsCc1ButtonPressContext,
   direction?: Direction,
+  monsters?: MsCc1MonsterState[],
 ): MsCc1MoveResult {
+  const mechanics = moveMechanics(trapCtx);
   const cellChanges: MsCc1CellChange[] = [];
   const nextState = clonePlayerState(state);
   const stepDirection =
@@ -533,8 +689,34 @@ export function tryMsCc1StepDelta(
   }
 
   if (isBlockTile(destTile)) {
-    if (!tryPushBlock(level, nx, ny, dx, dy, chipsLeft, cellChanges)) {
+    const padX = nx + dx;
+    const padY = ny + dy;
+    const pushOntoTeleport = isFunctioningTeleportAt(level, padX, padY);
+    if (
+      !tryPushBlock(
+        level,
+        nx,
+        ny,
+        dx,
+        dy,
+        chipsLeft,
+        cellChanges,
+        mechanics,
+        monsters,
+        trapCtx,
+      )
+    ) {
       return noMove(position, nextState, cellChanges, stepDirection);
+    }
+    if (pushOntoTeleport) {
+      tryTeleportPushedBlock(
+        level,
+        padX,
+        padY,
+        stepDirection,
+        chipsLeft,
+        cellChanges,
+      );
     }
     return completeSuccessfulMove(
       level,
@@ -570,6 +752,7 @@ export function tryMsCc1StepDelta(
     isBlockedCell(level, nx, ny, {
       chipsRemainingOnMap: chipsLeft,
       openTraps: mechanics?.openTraps,
+      stuckOnTraps: mechanics?.stuckOnTraps,
       allowAppearingWall: true,
     })
   ) {
@@ -587,6 +770,7 @@ export function tryMsCc1StepDelta(
     nextState,
     cellChanges,
     stepDirection,
+    trapCtx,
   );
 }
 
@@ -599,10 +783,20 @@ export function tryMsCc1SingleStep(
   position: { x: number; y: number },
   direction: Direction,
   state: MsCc1PlayerState,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  trapCtx?: MsCc1ButtonPressContext,
+  monsters?: MsCc1MonsterState[],
 ): MsCc1MoveResult {
   const { dx, dy } = moveIntentFromDirection(direction);
-  return tryMsCc1StepDelta(level, position, dx, dy, state, mechanics, direction);
+  return tryMsCc1StepDelta(
+    level,
+    position,
+    dx,
+    dy,
+    state,
+    trapCtx,
+    direction,
+    monsters,
+  );
 }
 
 const MAX_SLIDE_STEPS = 64;
@@ -621,8 +815,9 @@ function tryTeleportAfterLanding(
   entryDirection: Direction,
   state: MsCc1PlayerState,
   cellChanges: MsCc1CellChange[],
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  trapCtx?: MsCc1ButtonPressContext,
 ): MsCc1MoveResult | null {
+  const mechanics = moveMechanics(trapCtx);
   if (!isOnTeleportPad(level, position.x, position.y)) {
     return null;
   }
@@ -634,6 +829,7 @@ function tryTeleportAfterLanding(
     entryDirection,
     state,
     mechanics?.openTraps,
+    mechanics?.stuckOnTraps,
   );
 
   if (resolution.kind === "bounce") {
@@ -644,16 +840,51 @@ function tryTeleportAfterLanding(
       state,
       cellChanges,
       entryDirection,
+      trapCtx,
     );
+  }
+
+  let destX = resolution.x;
+  let destY = resolution.y;
+  if (resolution.kind === "warp") {
+    const { dx, dy } = directionDelta(entryDirection);
+    const exitTile = getCompositeTile(level, destX, destY);
+    if (isBlockTile(exitTile)) {
+      if (
+        !tryPushBlock(
+          level,
+          destX,
+          destY,
+          dx,
+          dy,
+          state.chipsRemainingOnMap,
+          cellChanges,
+          mechanics,
+          undefined,
+          trapCtx,
+        )
+      ) {
+        return completeSuccessfulMove(
+          level,
+          position,
+          from,
+          state,
+          cellChanges,
+          entryDirection,
+          trapCtx,
+        );
+      }
+    }
   }
 
   return completeSuccessfulMove(
     level,
     position,
-    { x: resolution.x, y: resolution.y },
+    { x: destX, y: destY },
     state,
     cellChanges,
     entryDirection,
+    trapCtx,
   );
 }
 
@@ -666,12 +897,20 @@ export function tryMsCc1Move(
   position: { x: number; y: number },
   direction: Direction,
   state: MsCc1PlayerState,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  trapCtx?: MsCc1ButtonPressContext,
+  monsters?: MsCc1MonsterState[],
 ): MsCc1MoveResult {
   const steps: MsCc1MoveStep[] = [];
   let pos = { ...position };
   let playerState = clonePlayerState(state);
   const inputIntent = moveIntentFromDirection(direction);
+
+  if (trapCtx && isCreatureStuckOnTrap(trapCtx, position.x, position.y)) {
+    return {
+      ...noMove(position, playerState, [], direction),
+      steps,
+    };
+  }
 
   const firstOnForce = stepIntentOnForceFloor(
     level,
@@ -687,10 +926,11 @@ export function tryMsCc1Move(
         firstOnForce.intent.dx,
         firstOnForce.intent.dy,
         playerState,
-        mechanics,
+        trapCtx,
         firstOnForce.direction,
+        monsters,
       )
-    : tryMsCc1SingleStep(level, pos, direction, playerState, mechanics);
+    : tryMsCc1SingleStep(level, pos, direction, playerState, trapCtx, monsters);
   recordStep(pos, first, steps);
   if (!first.moved) {
     return { ...first, steps };
@@ -708,7 +948,7 @@ export function tryMsCc1Move(
     result.direction,
     playerState,
     result.cellChanges,
-    mechanics,
+    trapCtx,
   );
   if (firstTeleport) {
     recordStep(pos, firstTeleport, steps);
@@ -734,7 +974,7 @@ export function tryMsCc1Move(
       result.direction,
       playerState,
       [],
-      mechanics,
+      trapCtx,
     );
     if (teleportStep) {
       recordStep(pos, teleportStep, steps);
@@ -774,10 +1014,8 @@ export function tryMsCc1Move(
 
     const slideStep = forceTile
       ? (() => {
-          const slideIntent = combineMoveIntents(
-            moveIntentFromDirection(slideDir),
-            inputIntent,
-          );
+          const forceIntent = moveIntentFromDirection(slideDir);
+          const slideIntent = combineForceWithInput(forceIntent, inputIntent);
           const slideDirection = directionFromMoveIntent(slideIntent);
           return tryMsCc1StepDelta(
             level,
@@ -785,11 +1023,12 @@ export function tryMsCc1Move(
             slideIntent.dx,
             slideIntent.dy,
             playerState,
-            mechanics,
+            trapCtx,
             slideDirection,
+            monsters,
           );
         })()
-      : tryMsCc1SingleStep(level, pos, slideDir, playerState, mechanics);
+      : tryMsCc1SingleStep(level, pos, slideDir, playerState, trapCtx, monsters);
     recordStep(pos, slideStep, steps);
     result = {
       moved: result.moved || slideStep.moved,

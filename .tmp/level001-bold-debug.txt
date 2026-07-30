@@ -1,0 +1,77 @@
+ 8 ...#####.#####...
+ 9 ...#...###...#...
+10 ...#.*.#E#.*.#...
+11 .#####g#S#g#####.
+12 .#.Y.b.....r.Y.#.
+13 .#.*.#B.?.R#.*.#.
+14 .#####*.@.*#####.
+15 .#.*.#B...R#.*.#.
+16 .#...r..*..b...#.
+17 .######y#y######.
+18 .....#..#..#.....
+19 .....#.*#*.#.....
+20 .....#..#G.#.....
+21 .....#######.....
+
+TWS: LLUULLLDURRRDDDDRDDDUUURRRRRRUDLLLUUUURRRDULLLLLLDDDDLLLLUDRRRRRRDDDDUUUUUUUURUURLDDLLLLUULRDDRRUU
+
+0 l (15,14) c11 [] -> (14,14) c11 [] moved=true done=false died=false
+1 l (14,14) c11 [] -> (13,14) c10 [] moved=true done=false died=false
+2 u (13,14) c10 [] -> (13,13) c10 [key_blue] moved=true done=false died=false
+3 u (13,13) c10 [key_blue] -> (13,12) c10 [key_blue] moved=true done=false died=false
+4 l (13,12) c10 [key_blue] -> (12,12) c10 [] moved=true done=false died=false
+5 l (12,12) c10 [] -> (11,12) c10 [] moved=true done=false died=false
+6 l (11,12) c10 [] -> (10,12) c10 [key_yellow] moved=true done=false died=false
+7 d (10,12) c10 [key_yellow] -> (10,13) c9 [key_yellow] moved=true done=false died=false
+8 u (10,13) c9 [key_yellow] -> (10,12) c9 [key_yellow] moved=true done=false died=false
+9 r (10,12) c9 [key_yellow] -> (11,12) c9 [key_yellow] moved=true done=false died=false
+10 r (11,12) c9 [key_yellow] -> (12,12) c9 [key_yellow] moved=true done=false died=false
+11 r (12,12) c9 [key_yellow] -> (13,12) c9 [key_yellow] moved=true done=false died=false
+12 d (13,12) c9 [key_yellow] -> (13,13) c9 [key_yellow] moved=true done=false died=false
+13 d (13,13) c9 [key_yellow] -> (13,14) c9 [key_yellow] moved=true done=false died=false
+14 d (13,14) c9 [key_yellow] -> (13,15) c9 [key_yellow,key_blue] moved=true done=false died=false
+15 d (13,15) c9 [key_yellow,key_blue] -> (13,16) c9 [key_yellow,key_blue] moved=true done=false died=false
+16 r (13,16) c9 [key_yellow,key_blue] -> (14,16) c9 [key_yellow,key_blue] moved=true done=false died=false
+17 d (14,16) c9 [key_yellow,key_blue] -> (14,17) c9 [key_blue] moved=true done=false died=false
+18 d (14,17) c9 [key_blue] -> (14,18) c9 [key_blue] moved=true done=false died=false
+19 d (14,18) c9 [key_blue] -> (14,19) c8 [key_blue] moved=true done=false died=false
+20 u (14,19) c8 [key_blue] -> (14,18) c8 [key_blue] moved=true done=false died=false
+21 u (14,18) c8 [key_blue] -> (14,17) c8 [key_blue] moved=true done=false died=false
+22 u (14,17) c8 [key_blue] -> (14,16) c8 [key_blue] moved=true done=false died=false
+23 r (14,16) c8 [key_blue] -> (15,16) c7 [key_blue] moved=true done=false died=false
+24 r (15,16) c7 [key_blue] -> (16,16) c7 [key_blue] moved=true done=false died=false
+54 l (13,16) c4 [key_yellow] -> (13,16) c4 [key_yellow] moved=false done=false died=false
+55 l (13,16) c4 [key_yellow] -> (13,16) c4 [key_yellow] moved=false done=false died=false
+56 l (13,16) c4 [key_yellow] -> (13,16) c4 [key_yellow] moved=false done=false died=false
+65 d (19,16) c4 [key_yellow] -> (19,16) c4 [key_yellow] moved=false done=false died=false
+66 d (19,16) c4 [key_yellow] -> (19,16) c4 [key_yellow] moved=false done=false died=false
+67 d (19,16) c4 [key_yellow] -> (19,16) c4 [key_yellow] moved=false done=false died=false
+68 d (19,16) c4 [key_yellow] -> (19,16) c4 [key_yellow] moved=false done=false died=false
+70 u (19,15) c4 [key_yellow] -> (19,15) c4 [key_yellow] moved=false done=false died=false
+71 u (19,15) c4 [key_yellow] -> (19,15) c4 [key_yellow] moved=false done=false died=false
+72 u (19,15) c4 [key_yellow] -> (19,15) c4 [key_yellow] moved=false done=false died=false
+73 u (19,15) c4 [key_yellow] -> (19,15) c4 [key_yellow] moved=false done=false died=false
+74 u (19,15) c4 [key_yellow] -> (19,15) c4 [key_yellow] moved=false done=false died=false
+75 u (19,15) c4 [key_yellow] -> (19,15) c4 [key_yellow] moved=false done=false died=false
+76 u (19,15) c4 [key_yellow] -> (19,15) c4 [key_yellow] moved=false done=false died=false
+78 u (20,15) c4 [key_yellow] -> (20,15) c4 [key_yellow] moved=false done=false died=false
+79 u (20,15) c4 [key_yellow] -> (20,15) c4 [key_yellow] moved=false done=false died=false
+80 r (20,15) c4 [key_yellow] -> (21,15) c4 [key_yellow] moved=true done=false died=false
+81 l (21,15) c4 [key_yellow] -> (20,15) c4 [key_yellow] moved=true done=false died=false
+82 d (20,15) c4 [key_yellow] -> (20,16) c4 [key_yellow] moved=true done=false died=false
+83 d (20,16) c4 [key_yellow] -> (20,16) c4 [key_yellow] moved=false done=false died=false
+84 l (20,16) c4 [key_yellow] -> (19,16) c4 [key_yellow] moved=true done=false died=false
+85 l (19,16) c4 [key_yellow] -> (18,16) c4 [key_yellow] moved=true done=false died=false
+86 l (18,16) c4 [key_yellow] -> (17,16) c4 [key_yellow] moved=true done=false died=false
+87 l (17,16) c4 [key_yellow] -> (16,16) c4 [key_yellow] moved=true done=false died=false
+88 u (16,16) c4 [key_yellow] -> (16,15) c4 [key_yellow] moved=true done=false died=false
+89 u (16,15) c4 [key_yellow] -> (16,14) c4 [key_yellow] moved=true done=false died=false
+90 l (16,14) c4 [key_yellow] -> (15,14) c4 [key_yellow] moved=true done=false died=false
+91 r (15,14) c4 [key_yellow] -> (16,14) c4 [key_yellow] moved=true done=false died=false
+92 d (16,14) c4 [key_yellow] -> (16,15) c4 [key_yellow] moved=true done=false died=false
+93 d (16,15) c4 [key_yellow] -> (16,16) c4 [key_yellow] moved=true done=false died=false
+94 r (16,16) c4 [key_yellow] -> (17,16) c4 [key_yellow] moved=true done=false died=false
+95 r (17,16) c4 [key_yellow] -> (18,16) c4 [key_yellow] moved=true done=false died=false
+96 u (18,16) c4 [key_yellow] -> (18,16) c4 [key_yellow] moved=false done=false died=false
+97 u (18,16) c4 [key_yellow] -> (18,16) c4 [key_yellow] moved=false done=false died=false
+FINAL ticks=79 rem=85 pos=18,16

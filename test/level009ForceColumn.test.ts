@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { normalizeLevelLayers } from "../engine/levelLayers.js";
-import { getForceFloorTileAt } from "../engine/msCc1/msCc1Sliding.js";
+import {
+  getForceFloorTileAt,
+  resolveForceSlideIntent,
+} from "../engine/msCc1/msCc1Sliding.js";
 import { tryMsCc1Move, msCc1StateFromRun } from "../engine/msCc1/msCc1Movement.js";
 import type { LevelData } from "../engine/types.js";
 
@@ -61,5 +64,35 @@ describe("level 9 force staircase", () => {
     expect(r.moved).toBe(true);
     expect(r.position.x).toBeGreaterThan(start.x);
     expect(r.position.y).toBeGreaterThan(start.y);
+  });
+
+  it("after one right step, repeated right without release re-enters force pads", () => {
+    const level = loadLevel009();
+    const state = msCc1StateFromRun([], 0);
+
+    const south = [];
+    for (let y = 0; y < level.height; y++) {
+      for (let x = 0; x < level.width; x++) {
+        if (getForceFloorTileAt(level, x, y) === "force_s") {
+          south.push({ x, y });
+        }
+      }
+    }
+    const start = south.sort((a, b) => a.y - b.y || a.x - b.x)[0]!;
+
+    const lvl = structuredClone(level);
+    let pos = { x: start.x, y: start.y };
+    const first = tryMsCc1Move(lvl, pos, "right", state);
+    expect(first.moved).toBe(true);
+    pos = first.position;
+
+    const second = tryMsCc1Move(lvl, pos, "right", state);
+    expect(second.moved).toBe(true);
+    expect(getForceFloorTileAt(lvl, second.position.x, second.position.y)).toBe("force_s");
+  });
+
+  it("force-only continuation respects held right on force_s", () => {
+    const force = { dx: 0, dy: 1 };
+    expect(resolveForceSlideIntent(force, "right")).toEqual({ dx: 1, dy: 1 });
   });
 });

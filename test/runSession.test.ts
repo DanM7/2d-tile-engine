@@ -38,13 +38,18 @@ describe("RunSession", () => {
 
     expect(session.tryAddKey("key_blue")).toBe(true);
     expect(session.getState().inventory?.keys).toEqual(["key_blue"]);
-    expect(session.tryAddKey("key_blue")).toBe(false);
+    expect(session.tryAddKey("key_blue")).toBe(true);
+    expect(session.getState().inventory?.keys).toEqual(["key_blue", "key_blue"]);
     expect(session.tryAddKey("key_red")).toBe(true);
-    expect(session.getState().inventory?.keys).toEqual(["key_blue", "key_red"]);
+    expect(session.getState().inventory?.keys).toEqual([
+      "key_blue",
+      "key_blue",
+      "key_red",
+    ]);
 
     expect(session.consumeKey("key_blue")).toBe(true);
-    expect(session.getState().inventory?.keys).toEqual(["key_red"]);
-    expect(session.hasKey("key_blue")).toBe(false);
+    expect(session.getState().inventory?.keys).toEqual(["key_blue", "key_red"]);
+    expect(session.hasKey("key_blue")).toBe(true);
 
     session.stop();
     vi.useRealTimers();

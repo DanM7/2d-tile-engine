@@ -49,6 +49,7 @@ export function monsterKindFromTileId(tileId: string): string | null {
   if (tileId.startsWith("tank_")) return "tank";
   if (tileId.startsWith("ghost_")) return "ghost";
   if (tileId.startsWith("ball_pink_")) return "ball_pink";
+  if (tileId.startsWith("walker_")) return "walker";
   if (tileId.startsWith("fireball_")) return "fireball";
   /** MS teeth (angry teeth) use frog facing tiles in CC1 DAT. */
   if (tileId.startsWith("frog_")) return "frog";

@@ -8,6 +8,8 @@ function lesson8RowCtx(): MsCc1ButtonPressContext {
   return {
     redButtonArmed: new Set(),
     openTraps: new Set(),
+    stuckOnTraps: new Set(),
+    heldBrownButtons: new Set(),
     moveBoundary: 0,
     stepParity: "even",
   };

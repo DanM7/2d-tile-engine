@@ -12,15 +12,17 @@ import {
   setUpperTile,
 } from "../levelRuntime.js";
 import {
+  COLLECTIBLE_CHIP_TILE_ID,
   isBlockTile,
   isButtonTile,
   isMonsterTile,
   isToggleWallTile,
 } from "../../tile-engine/tiles.js";
 import {
-  isClosedTrapAt,
-  parkGliderOnFirstBrownButton,
+  isCreatureStuckOnTrap,
+  isTrapBlockingEntry,
   TRAP_TILE_ID,
+  type TrapMechanicsCtx,
 } from "./msCc1Traps.js";
 import type { MsCc1ButtonPressContext } from "./msCc1Buttons.js";
 
@@ -135,7 +137,6 @@ export function createMsCc1Monsters(level: LevelData): MsCc1MonsterState[] {
 
   appendMapMonstersMissingFromList(level, monsters);
 
-  parkGliderOnFirstBrownButton(level, monsters);
   syncMonsterTilesOnLevel(level, monsters);
 
   return monsters;
@@ -241,7 +242,20 @@ function scanMonsterCellsOnMap(level: LevelData): LevelData["monsters"] {
   return found;
 }
 
-type MonsterEnterResult = "ok" | "blocked" | "drown" | "die";
+type MonsterEnterResult = "ok" | "blocked" | "drown" | "die" | "explode";
+
+/** Map chip pickup (`chip` tile), not Chip's avatar sprites. */
+function isMapCollectibleChipAt(level: LevelData, x: number, y: number): boolean {
+  return (
+    cellTile(level, "upper", x, y) === COLLECTIBLE_CHIP_TILE_ID ||
+    cellTile(level, "lower", x, y) === COLLECTIBLE_CHIP_TILE_ID
+  );
+}
+
+/** MS pink ball and walker treat map chips as walls. */
+function monsterTreatsChipAsWall(kind: string): boolean {
+  return kind === "ball_pink" || kind === "walker";
+}
 
 function canMonsterEnter(
   level: LevelData,
@@ -250,7 +264,7 @@ function canMonsterEnter(
   kind: string,
   chipsLeft: number,
   occupied: Set<string>,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  mechanics?: TrapMechanicsCtx,
 ): MonsterEnterResult {
   if (x < 0 || x >= level.width || y < 0 || y >= level.height) {
     return "blocked";
@@ -275,12 +289,15 @@ function canMonsterEnter(
     return "blocked";
   }
   if (composite === "bomb") {
-    return "die";
+    return "explode";
   }
   if (isDirtCell(level, x, y)) {
     return "blocked";
   }
   if (composite === "gravel") {
+    return "blocked";
+  }
+  if (monsterTreatsChipAsWall(kind) && isMapCollectibleChipAt(level, x, y)) {
     return "blocked";
   }
   if (isBlockTile(composite) || isDoorTile(composite) || isExitTile(composite)) {
@@ -292,13 +309,14 @@ function canMonsterEnter(
   if (isMonsterTile(composite)) {
     return "blocked";
   }
-  if (mechanics && isClosedTrapAt(level, x, y, mechanics)) {
+  if (mechanics && isTrapBlockingEntry(level, x, y, mechanics)) {
     return "blocked";
   }
   if (
     isBlockedCell(level, x, y, {
       chipsRemainingOnMap: chipsLeft,
       openTraps: mechanics?.openTraps,
+      stuckOnTraps: mechanics?.stuckOnTraps,
     })
   ) {
     return "blocked";
@@ -318,6 +336,7 @@ function removeMonsterFromMap(
   restoreButtonAfterMonsterLeaves(level, x, y, cellChanges);
   restoreToggleWallAfterMonsterLeaves(level, x, y, cellChanges);
   restoreTrapAfterMonsterLeaves(level, x, y, cellChanges);
+  restoreChipCollectibleAfterMonsterLeaves(level, x, y, cellChanges);
   monster.alive = false;
 }
 
@@ -349,6 +368,36 @@ function preserveButtonBeforeMonsterEnters(
   }
   setLowerTile(level, x, y, upper);
   recordPlacement(cellChanges, x, y, upper);
+}
+
+/** MS: map chips stay when creatures step on them (only Chip collects). */
+function restoreChipCollectibleAfterMonsterLeaves(
+  level: LevelData,
+  x: number,
+  y: number,
+  cellChanges: MsCc1CellChange[],
+): void {
+  const lower = cellTile(level, "lower", x, y);
+  if (lower !== COLLECTIBLE_CHIP_TILE_ID) {
+    return;
+  }
+  setUpperTile(level, x, y, COLLECTIBLE_CHIP_TILE_ID);
+  setLowerTile(level, x, y, "empty");
+  recordPlacement(cellChanges, x, y, COLLECTIBLE_CHIP_TILE_ID);
+}
+
+function preserveChipCollectibleBeforeMonsterEnters(
+  level: LevelData,
+  x: number,
+  y: number,
+  cellChanges: MsCc1CellChange[],
+): void {
+  const upper = cellTile(level, "upper", x, y);
+  if (upper !== COLLECTIBLE_CHIP_TILE_ID) {
+    return;
+  }
+  setLowerTile(level, x, y, COLLECTIBLE_CHIP_TILE_ID);
+  recordPlacement(cellChanges, x, y, COLLECTIBLE_CHIP_TILE_ID);
 }
 
 /** MS: open/closed toggle walls stay under creatures (same as buttons). */
@@ -455,10 +504,14 @@ function moveMonsterOnMap(
   restoreButtonAfterMonsterLeaves(level, fromX, fromY, cellChanges);
   restoreToggleWallAfterMonsterLeaves(level, fromX, fromY, cellChanges);
   restoreTrapAfterMonsterLeaves(level, fromX, fromY, cellChanges);
+  restoreChipCollectibleAfterMonsterLeaves(level, fromX, fromY, cellChanges);
 
   preserveButtonBeforeMonsterEnters(level, toX, toY, cellChanges);
   preserveToggleWallBeforeMonsterEnters(level, toX, toY, cellChanges);
   preserveTrapBeforeMonsterEnters(level, toX, toY, cellChanges);
+  if (!monsterTreatsChipAsWall(monster.kind)) {
+    preserveChipCollectibleBeforeMonsterEnters(level, toX, toY, cellChanges);
+  }
   preserveFireBeforeMonsterEnters(level, toX, toY, cellChanges);
 
   const newTileId = monsterTileId(monster.kind, newFacing);
@@ -501,8 +554,11 @@ function tryMonsterStep(
   occupied: Set<string>,
   cellChanges: MsCc1CellChange[],
   afterStep?: MsCc1AfterStepHook,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  mechanics?: TrapMechanicsCtx,
 ): MonsterStepResult {
+  if (mechanics && isCreatureStuckOnTrap(mechanics, monster.x, monster.y)) {
+    return "blocked";
+  }
   const { dx, dy } = monsterFacingDelta(facing);
   const nx = monster.x + dx;
   const ny = monster.y + dy;
@@ -516,9 +572,17 @@ function tryMonsterStep(
     mechanics,
   );
 
-  if (enter === "drown" || enter === "die") {
+  if (enter === "drown" || enter === "die" || enter === "explode") {
+    const fromX = monster.x;
+    const fromY = monster.y;
     removeMonsterFromMap(level, monster, cellChanges);
-    occupied.delete(`${monster.x},${monster.y}`);
+    occupied.delete(`${fromX},${fromY}`);
+    // MS: creature + bomb both clear; fire/water deaths leave the terrain.
+    if (enter === "explode") {
+      if (removeTileAt(level, nx, ny, "bomb")) {
+        recordRemoval(cellChanges, nx, ny, "bomb");
+      }
+    }
     return "removed";
   }
   if (enter === "blocked") {
@@ -544,7 +608,7 @@ function stepBug(
   cellChanges: MsCc1CellChange[],
   monsters: MsCc1MonsterState[],
   afterStep?: MsCc1AfterStepHook,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  mechanics?: MsCc1ButtonPressContext,
 ): boolean {
   if (!monster.alive) {
     return false;
@@ -588,7 +652,7 @@ function stepTank(
   cellChanges: MsCc1CellChange[],
   monsters: MsCc1MonsterState[],
   afterStep?: MsCc1AfterStepHook,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  mechanics?: MsCc1ButtonPressContext,
 ): boolean {
   if (!monster.alive || monster.stopped) {
     return false;
@@ -625,7 +689,7 @@ function stepGlider(
   cellChanges: MsCc1CellChange[],
   monsters: MsCc1MonsterState[],
   afterStep?: MsCc1AfterStepHook,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  mechanics?: MsCc1ButtonPressContext,
 ): boolean {
   if (!monster.alive) {
     return false;
@@ -685,7 +749,7 @@ function stepFireball(
   cellChanges: MsCc1CellChange[],
   monsters: MsCc1MonsterState[],
   afterStep?: MsCc1AfterStepHook,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  mechanics?: MsCc1ButtonPressContext,
 ): boolean {
   if (!monster.alive) {
     return false;
@@ -745,7 +809,7 @@ function stepBallPink(
   cellChanges: MsCc1CellChange[],
   monsters: MsCc1MonsterState[],
   afterStep?: MsCc1AfterStepHook,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps">,
+  mechanics?: MsCc1ButtonPressContext,
 ): boolean {
   if (!monster.alive) {
     return false;
@@ -791,6 +855,110 @@ function stepBallPink(
   return false;
 }
 
+const WALKER_FACINGS: MonsterFacing[] = ["north", "east", "south", "west"];
+
+/**
+ * MS walker: move forward; when blocked, pick a random legal direction (MS never
+ * chooses a blocked facing when any open facing exists). Dies in water/bombs; fire is a wall.
+ */
+function pickRandomUnblockedWalkerFacing(
+  level: LevelData,
+  monster: MsCc1MonsterState,
+  chipsLeft: number,
+  occupied: Set<string>,
+  mechanics?: TrapMechanicsCtx,
+): MonsterFacing | null {
+  const options: MonsterFacing[] = [];
+  for (const facing of WALKER_FACINGS) {
+    const { dx, dy } = monsterFacingDelta(facing);
+    const enter = canMonsterEnter(
+      level,
+      monster.x + dx,
+      monster.y + dy,
+      monster.kind,
+      chipsLeft,
+      occupied,
+      mechanics,
+    );
+    if (enter === "ok") {
+      options.push(facing);
+    }
+  }
+  if (options.length === 0) {
+    return null;
+  }
+  return options[Math.floor(Math.random() * options.length)]!;
+}
+
+function stepWalker(
+  level: LevelData,
+  monster: MsCc1MonsterState,
+  chipPosition: { x: number; y: number },
+  chipsLeft: number,
+  occupied: Set<string>,
+  cellChanges: MsCc1CellChange[],
+  monsters: MsCc1MonsterState[],
+  afterStep?: MsCc1AfterStepHook,
+  mechanics?: MsCc1ButtonPressContext,
+): boolean {
+  if (!monster.alive) {
+    return false;
+  }
+
+  const trapMechanics: TrapMechanicsCtx | undefined = mechanics;
+
+  const forward = tryMonsterStep(
+    level,
+    monster,
+    monster.direction,
+    chipsLeft,
+    occupied,
+    cellChanges,
+    afterStep,
+    trapMechanics,
+  );
+  if (forward === "removed") {
+    return false;
+  }
+  if (forward === "moved") {
+    return monster.x === chipPosition.x && monster.y === chipPosition.y;
+  }
+
+  const facing = pickRandomUnblockedWalkerFacing(
+    level,
+    monster,
+    chipsLeft,
+    occupied,
+    trapMechanics,
+  );
+  if (!facing) {
+    return false;
+  }
+
+  if (facing !== monster.direction) {
+    setMonsterFacingInPlace(level, monster, facing, cellChanges);
+  }
+
+  const turnStep = tryMonsterStep(
+    level,
+    monster,
+    facing,
+    chipsLeft,
+    occupied,
+    cellChanges,
+    afterStep,
+    trapMechanics,
+  );
+  if (turnStep === "removed") {
+    return false;
+  }
+  if (turnStep === "moved") {
+    return monster.x === chipPosition.x && monster.y === chipPosition.y;
+  }
+
+  return false;
+}
+
 /** MS teeth (frog): chase Chip every other move boundary; dirt/gravel block. */
 function stepTeeth(
   level: LevelData,
@@ -802,12 +970,13 @@ function stepTeeth(
   moveBoundary: number,
   boundaryAdvanced: boolean,
   afterStep?: MsCc1AfterStepHook,
-  mechanics?: Pick<MsCc1ButtonPressContext, "openTraps" | "stepParity" | "chipIgnoresTeeth">,
+  mechanics?: MsCc1ButtonPressContext,
 ): boolean {
   if (!monster.alive) {
     return false;
   }
 
+  const trapMechanics: TrapMechanicsCtx | undefined = mechanics;
   const parity = mechanics?.stepParity ?? "even";
   if (!boundaryAdvanced) {
     return false;
@@ -827,7 +996,7 @@ function stepTeeth(
       monster.kind,
       chipsLeft,
       occupied,
-      mechanics,
+      trapMechanics,
     );
     return enter === "ok";
   };
@@ -845,7 +1014,7 @@ function stepTeeth(
     occupied,
     cellChanges,
     afterStep,
-    mechanics,
+    trapMechanics,
   );
   if (result === "removed") {
     return false;
@@ -938,6 +1107,18 @@ export function tickMsCc1Monsters(
       );
     } else if (monster.kind === "ball_pink") {
       hitChip = stepBallPink(
+        level,
+        monster,
+        chipPosition,
+        chipsRemainingOnMap,
+        occupied,
+        cellChanges,
+        monsters,
+        afterStep,
+        mechanics,
+      );
+    } else if (monster.kind === "walker") {
+      hitChip = stepWalker(
         level,
         monster,
         chipPosition,

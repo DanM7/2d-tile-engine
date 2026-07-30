@@ -68,6 +68,8 @@ describe("msCc1Buttons", () => {
     applyButtonPressAt(level, { x: 2, y: 1 }, { x: 2, y: 2 }, monsters, changes, {
       redButtonArmed: collectRedButtonCells(level),
       openTraps: new Set<string>(),
+      stuckOnTraps: new Set<string>(),
+      heldBrownButtons: new Set<string>(),
       moveBoundary: 0,
     });
     expect(monsters[0]?.direction).toBe("south");
